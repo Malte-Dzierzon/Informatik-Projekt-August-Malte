@@ -2,6 +2,8 @@
 
 Ein einfaches neuronales Netz zur binären Klassifikation von 2D- und 3D-Objekten anhand ihrer Vertices.
 
+Doc: https://canva.link/xir0wtc74df416s
+
 ## Projektziel
 Das Modell entscheidet nur zwischen zwei Ausgaben:
 
