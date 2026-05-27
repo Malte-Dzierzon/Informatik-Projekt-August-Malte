@@ -1,727 +1,423 @@
-r"""
-STREAMLIT WEB UI FÜR NEURONALES NETZWERK - ERWEITERT
-=====================================================
-Web-Interface zur Konfiguration und zum Training eines neuronalen Netzwerks
-für die binäre Klassifikation von 2D- und 3D-Objekten als Pyramiden.
+﻿"""
+PYRAMIDEN-KLASSIFIKATION - TRAININGSANWENDUNG
+==============================================
 
-NEU IN DIESER VERSION:
-✓ Checkpoint-System: Speichern/Laden mit Fortsetzbarem Training
-✓ Pyramiden-Generator: Prozeduraler Datengenerierung
-✓ Dynamisches Input-System: Variable Eckpunkt-Anzahl mit intelligenter Filterung
-✓ Training-Counter: Tracking der Gesamtzahl der Trainingsdurchgänge
+Neuronales Netz zur Klassifikation: Pyramiden (1) vs. Andere (0)
 
-Starten mit: .\.venv\Scripts\Activate.ps1
-streamlit run app.py
+STRUKTUR:
+1. Trainingsdaten: Datengenerierung oder Upload
+2. Training: Modell trainieren mit konfigurierbaren Parametern
+3. Checkpoints: Modelle speichern/laden
+4. Stats: Modell-Info, Export/Import
+
+Starten: einfach steup_and_run.py ausführen, dann öffnet sich die Streamlit-App im Browser.
 """
 
 import streamlit as st
 import numpy as np
-import pandas as pd
-import json
 import os
+import json
+import pandas as pd
 from datetime import datetime
-import math
-import random
 import plotly.graph_objects as go
-
-# Import neue Module
 from checkpoint import CheckpointManager
 from pyramid_generator import PyramidGenerator
 from dynamic_input import DynamicInputHandler
 
-# ================================================================================================
-# SEITE KONFIGURATION & INITIALIZATION
-# ================================================================================================
 
 st.set_page_config(
-    page_title="Pyramiden Klassifikation",
-    page_icon="🔷",
+    page_title="Pyramiden-Klassifikation",
     layout="wide"
 )
 
-st.markdown('<h1 class="main-title">Informatik-Projekt-August-Malte</h1>', unsafe_allow_html=True)
-st.markdown('<p class="main-subtitle">Neuronales Netz zur Erkennung von Pyramiden</p>', unsafe_allow_html=True)
+st.markdown("# Pyramiden-Klassifikation")
+st.markdown("Neuronales Netz zur Erkennung von Pyramiden | Informatik-Projekt")
+st.markdown("---")
 
-# Initialisiere Manager
+# Session State Initialisierung
 if "checkpoint_manager" not in st.session_state:
     st.session_state.checkpoint_manager = CheckpointManager()
     st.session_state.pyramid_generator = PyramidGenerator(seed=42)
-    st.session_state.input_handler = DynamicInputHandler(max_vertices=12, coordinates_per_vertex=3)
-    
-    # Initialisiere Training-Counter
-    if "total_training_count" not in st.session_state:
-        st.session_state.total_training_count = 0
+    st.session_state.input_handler = DynamicInputHandler()
+    st.session_state.total_training_count = 0
 
-# ================================================================================================
-# TABS FÜR VERSCHIEDENE FUNKTIONALITÄTEN
-# ================================================================================================
 
-tab_config, tab_data, tab_training, tab_checkpoint, tab_predict = st.tabs([
-    "Konfiguration",
-    "Trainingsdaten",
+tab_data, tab_training, tab_checkpoint, tab_stats = st.tabs([
+    "Daten",
     "Training",
     "Checkpoints",
-    "Vorhersagen"
+    "Statistiken"
 ])
 
 
-# ================================================================================================
-# TAB 1: KONFIGURATION
-# ================================================================================================
+# ---------------------------------------------------------------------------
+# TAB DATA: Trainingsdaten Management
+# ---------------------------------------------------------------------------
 
-with tab_config:
-    st.header("Netzwerk-Konfiguration")
-    st.markdown("---")
+with tab_data:
+    st.subheader("Trainingsdaten Management")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("Netzwerk-Architektur")
+        st.markdown("**Datengenerierung**")
+        n_pyramids = st.number_input("Pyramiden", min_value=10, value=100, step=10)
+        n_non_pyramids = st.number_input("Andere", min_value=10, value=100, step=10)
         
-        input_size = st.number_input(
-            "Input-Größe (Anzahl der Koordinaten)",
-            min_value=2,
-            max_value=100,
-            value=19,
-            help="Für Pyramiden: 4 Punkte × 3 Koordinaten + Features = 15-19"
-        )
-        
-        hidden_size = st.number_input(
-            "Hidden Layer - Größe",
-            min_value=2,
-            max_value=1000,
-            value=32,
-            help="Anzahl der Neuronen im Hidden Layer"
-        )
+        if st.button("Generieren", use_container_width=True, key="gen_btn"):
+            with st.spinner("Generiere Daten..."):
+                gen = st.session_state.pyramid_generator
+                data, _ = gen.generate_dataset(n_pyramids, n_non_pyramids)
+                # Direkt als float32 speichern spart RAM bei großen Mengen
+                st.session_state.data = data.astype(np.float32)
+                st.success(f"Erfolgreich: {len(data)} Samples generiert")
     
     with col2:
-        st.subheader("Trainings-Parameter")
-        
-        learning_rate = st.slider(
-            "Learning Rate (Lambda)",
-            min_value=0.001,
-            max_value=1.0,
-            value=0.1,
-            step=0.01,
-            help="Schrittgröße für Gewichtsaktualisierung"
-        )
-        
-        epochs = st.number_input(
-            "Epochen (Trainings-Iterationen)",
-            min_value=1,
-            max_value=10000,
-            value=500,
-            help="Wie oft das Modell alle Trainingsdaten durchläuft"
-        )
-    
-    col3, col4 = st.columns(2)
-    
-    with col3:
-        batch_size = st.number_input(
-            "Batch-Größe",
-            min_value=1,
-            max_value=100,
-            value=4,
-            help="Wie viele Samples pro Update"
-        )
-        
-        test_split = st.slider(
-            "Test-Daten Anteil",
-            min_value=0.1,
-            max_value=0.5,
-            value=0.2,
-            help="Anteil der Daten für Test"
-        )
-    
-    with col4:
-        bias = st.slider(
-            "Bias-Wert",
-            min_value=0.0,
-            max_value=1.0,
-            value=0.5,
-            help="Bias für Hidden Layer Neuronen"
-        )
-        
-        normalize = st.checkbox(
-            "Normalisierung aktivieren",
-            value=True,
-            help="Normalisiere Input-Daten auf [0,1]"
-        )
-    
-    # Speichere in Session State
-    st.session_state.config = {
-        "input_size": input_size,
-        "hidden_size": hidden_size,
-        "learning_rate": learning_rate,
-        "epochs": epochs,
-        "batch_size": batch_size,
-        "test_split": test_split,
-        "bias": bias,
-        "normalize": normalize
-    }
-    
-    st.success("✓ Konfiguration aktualisiert")
-
-
-# ================================================================================================
-# TAB 2: TRAININGSDATEN
-# ================================================================================================
-
-with tab_data:
-    st.header("Trainingsdaten Management")
-    st.markdown("---")
-    
-    data_source = st.radio(
-        "Datenquelle wählen",
-        ["Pyramiden-Generator (PROZEDURAL)", "CSV-Datei hochladen", "Sample-Daten"],
-        help="Wie sollen die Trainingsdaten generiert werden?"
-    )
-    
-    st.markdown("---")
-    
-    data = None
-    data_metadata = None
-    
-    if data_source == "Pyramiden-Generator (PROZEDURAL)":
-        st.subheader("Pyramiden-Generator")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            n_pyramids = st.number_input(
-                "Anzahl der Pyramiden",
-                min_value=10,
-                max_value=1000,
-                value=100,
-                help="Wie viele Pyramiden generieren?"
-            )
-        
-        with col2:
-            n_non_pyramids = st.number_input(
-                "Anzahl der Non-Pyramids",
-                min_value=10,
-                max_value=1000,
-                value=100,
-                help="Wie viele andere Formen?"
-            )
-        
-        use_variable_size = st.checkbox(
-            "Variable Eckpunkt-Anzahl",
-            value=False,
-            help="Feature 4: Unterschiedliche Vertex-Anzahl pro Sample"
-        )
-        
-        if st.button("Daten generieren", use_container_width=True):
-            with st.spinner("Generiere Pyramiden..."):
-                gen = st.session_state.pyramid_generator
-                
-                if use_variable_size:
-                    data, data_metadata = gen.generate_dataset_variable_size(
-                        n_samples=n_pyramids + n_non_pyramids,
-                        min_vertices=4,
-                        max_vertices=8,
-                        shuffle=True
-                    )
-                    st.info(f"✓ {len(data)} Samples mit variabler Größe generiert")
-                else:
-                    data, data_metadata = gen.generate_dataset(
-                        n_pyramids=n_pyramids,
-                        n_non_pyramids=n_non_pyramids,
-                        shuffle=True
-                    )
-                    st.info(f"✓ {len(data)} Samples generiert")
-                
-                st.session_state.data = data
-                st.session_state.data_metadata = data_metadata
-    
-    elif data_source == "CSV-Datei hochladen":
-        st.subheader("CSV-Upload")
-        
-        uploaded_file = st.file_uploader(
-            "CSV-Datei hochladen (Format: features..., label)",
-            type="csv"
-        )
-        
-        if uploaded_file is not None:
+        st.markdown("**CSV Upload**")
+        uploaded = st.file_uploader("CSV hochladen", type="csv")
+        if uploaded:
             try:
-                data = np.loadtxt(uploaded_file, delimiter=",")
-                st.success(f"✓ Datei geladen: {data.shape[0]} Samples, {data.shape[1]-1} Features")
-                st.session_state.data = data
+                # Schnellerer Import via Pandas (wichtig für große Datensätze ab 100k Zeilen)
+                # 'header=None' geht von reinen Zahlen aus. Falls Text drin ist, fängt es das ab.
+                df_upload = pd.read_csv(uploaded, header=None)
+                
+                # Falls die erste Zeile Text (Header) enthält, ignorieren wir sie
+                if isinstance(df_upload.iloc[0, 0], str):
+                    df_upload = pd.read_csv(uploaded)
+                    
+                st.session_state.data = df_upload.to_numpy(dtype=np.float32)
+                st.success(f"Erfolgreich: {len(st.session_state.data)} Samples geladen")
             except Exception as e:
-                st.error(f"❌ Fehler beim Laden: {e}")
+                st.error(f"Fehler beim Laden der CSV: {e}")
     
-    else:  # Sample-Daten
-        st.subheader("Sample-Daten")
-        
-        sample_pyramids = [
-            [1.0, 1.0, 1.0, 0.0] * 5,  # 20 Features
-            [0.9, 0.95, 0.95, 0.05] * 5,
-            [1.1, 1.05, 1.05, -0.05] * 5,
-            [0.85, 0.9, 1.1, 0.1] * 5,
-            [1.15, 1.1, 0.9, -0.1] * 5,
-        ]
-        sample_cubes = [
-            [0.5, 0.5, 0.5, 0.5] * 5,  # 20 Features
-            [0.55, 0.5, 0.5, 0.5] * 5,
-            [0.5, 0.55, 0.5, 0.5] * 5,
-            [0.45, 0.5, 0.5, 0.5] * 5,
-            [0.5, 0.45, 0.5, 0.5] * 5,
-        ]
-        
-        data = []
-        for pyramid in sample_pyramids:
-            data.append(pyramid + [1])
-        for cube in sample_cubes:
-            data.append(cube + [0])
-        
-        data = np.array(data[:19])  # Nur 19 Features
-        st.info("✓ Sample-Daten geladen")
-        st.session_state.data = data
-    
-    # Zeige Daten-Statistik
-    if "data" in st.session_state and st.session_state.data is not None:
+    if "data" in st.session_state:
+        st.markdown("---")
         data = st.session_state.data
         
-        if isinstance(data, list):  # Variable-Size
-            st.subheader("Daten-Statistik (Variable-Size)")
-            st.metric("Gesamte Samples", len(data))
-            st.markdown(f"Größen-Range: {min(len(d) for d in data)} - {max(len(d) for d in data)} Features")
-        else:
-            st.subheader("Daten-Statistik")
+        # Vektorisierte, schnelle Zählung
+        pyramids = int(np.sum(data[:, -1] == 1))
+        non_pyramids = len(data) - pyramids
+        
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Gesamt", f"{len(data):,}".replace(",", "."))
+        col2.metric("Pyramiden (1)", f"{pyramids:,}".replace(",", "."))
+        col3.metric("Andere (0)", f"{non_pyramids:,}".replace(",", "."))
+        
+        with st.expander("Daten-Vorschau"):
+            # Speicheroptimierung: Zeige maximal die ersten 1000 Zeilen im UI an!
+            # Streamlit friert sonst bei 1 Million Zeilen im Browser komplett ein.
+            preview_size = min(1000, len(data))
             
-            col1, col2, col3, col4 = st.columns(4)
+            df_preview = pd.DataFrame(
+                data[:preview_size],
+                columns=[f"Feature_{i+1}" for i in range(data.shape[1]-1)] + ["Label"]
+            )
+            df_preview["Label"] = df_preview["Label"].astype(int)
             
-            with col1:
-                st.metric("Gesamt Samples", len(data))
-            with col2:
-                st.metric("Pyramiden (1)", int(data[:, -1].sum()))
-            with col3:
-                st.metric("Non-Pyramids (0)", len(data) - int(data[:, -1].sum()))
-            with col4:
-                st.metric("Features", data.shape[1] - 1)
-            
-            # Vorschau
-            with st.expander("Vorschau Trainingsdaten"):
-                df_preview = pd.DataFrame(data[:10])
-                df_preview.columns = [f"F{i+1}" for i in range(data.shape[1]-1)] + ["Label"]
-                st.dataframe(df_preview, use_container_width=True)
+            st.dataframe(df_preview, use_container_width=True, height=400)
+            if len(data) > 1000:
+                st.caption(f"Hinweis: Es werden nur die ersten 1.000 von {len(data):,} Zeilen als Vorschau angezeigt.")
 
+# ───────────────────────────────────────────────────────────────────────────
+# TAB TRAINING: Modell trainieren
+# ───────────────────────────────────────────────────────────────────────────
 
-# ================================================================================================
-# TAB 3: TRAINING
-# ================================================================================================
+from scipy.special import expit  # Extrem schnelle, C-optimierte Sigmoid-Funktion
+import numpy as np
+import streamlit as st  # Korrigiert auf 'st' passend zum restlichen Code
 
 with tab_training:
-    st.header("Modell Training")
-    st.markdown("---")
+    st.subheader("Training starten")
     
-    # Training-Counter Anzeige
-    col1, col2, col3, col4 = st.columns(4)
-    
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Gesamtzahl Trainings-Durchgänge", st.session_state.total_training_count)
+        input_size = st.number_input("Input-Größe", value=19, step=1)
     with col2:
-        if "model" in st.session_state:
-            st.metric("✓ Modell Status", "Trainiert")
-        else:
-            st.metric("✓ Modell Status", "Neu")
+        hidden_size = st.number_input("Hidden Layer", value=32, step=1)
     with col3:
-        if "last_training_time" in st.session_state:
-            st.metric("Letztes Training", st.session_state.last_training_time.strftime("%H:%M:%S"))
-    with col4:
-        if "current_loss" in st.session_state:
-            st.metric("Aktueller Loss", f"{st.session_state.current_loss:.6f}")
+        learning_rate = st.slider("Learning Rate", 0.001, 1.0, 0.1)
     
-    st.markdown("---")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        epochs = st.number_input("Epochen", value=500, step=50)
+    with col2:
+        test_split = st.slider("Test-Anteil", 0.1, 0.5, 0.2)
+    with col3:
+        normalize = st.checkbox("Normalisieren", value=True)
     
-    # Training Options
-    col_train, col_load, col_clear = st.columns(3)
-    
-    with col_train:
-        start_training = st.button("Training starten", use_container_width=True, key="train_btn")
-    
-    with col_load:
-        load_checkpoint = st.button("Checkpoint laden", use_container_width=True, key="load_btn")
-    
-    with col_clear:
-        reset_model = st.button("Modell zurücksetzen", use_container_width=True, key="reset_btn")
-    
-    st.markdown("")
-    
-    # Training durchführen
-    if start_training:
-        if "data" not in st.session_state or st.session_state.data is None:
-            st.error("❌ Keine Trainingsdaten geladen!")
+    if st.button("Training starten", use_container_width=True, key="train_btn"):
+        if "data" not in st.session_state:
+            st.error("Keine Daten geladen!")
         else:
-            config = st.session_state.config
             data = st.session_state.data
             
-            # Für Variable-Size Daten: Konvertiere zu fixed-size
-            if isinstance(data, list):
-                # Nutze Dynamic Input Handler
-                max_len = max(len(d) for d in data)
-                data = np.array([
-                    np.concatenate([d[:-1], [0] * (max_len - len(d) + 1), [d[-1]]])
-                    for d in data
-                ], dtype=np.float32)
+            # Normalisierung (Inplace & Vektorisiert für große Datenmengen)
+            if normalize:
+                features = data[:, :-1].astype(np.float32)
+                f_min = features.min(axis=0)
+                f_max = features.max(axis=0)
+                f_range = f_max - f_min
+                f_range[f_range == 0] = 1.0
+                features = (features - f_min) / f_range
+                data = np.concatenate([features, data[:, -1:].astype(np.float32)], axis=1)
+            else:
+                data = data.astype(np.float32)
             
-            # Dynamisches Input-Handling
-            input_handler = st.session_state.input_handler
-            processed_data, data_info = input_handler.filter_and_prepare_network_input(
-                data, 
-                use_detected_active_features=True
-            )
+            # Train/Test Split
+            n = len(data)
+            n_test = int(n * test_split)
+            idx = np.random.permutation(n)
+            train_data = data[idx[:n-n_test]]
+            test_data = data[idx[n-n_test:]]
             
-            # Aktualisiere Input-Größe basierend auf echten Features
-            actual_input_size = data_info["active_feature_count"]
+            # Datensätze VOR der Schleife final extrahieren (spart Gigabytes an RAM-Kopien!)
+            X_train = train_data[:, :-1]
+            y_train = train_data[:, -1:]
+            X_test = test_data[:, :-1]
+            y_test = test_data[:, -1:]
             
-            st.info(f"ℹ{data_info['padding_feature_count']} Padding-Features erkannt und gefiltert")
+            n_train = len(X_train)
+            X_train_T = X_train.T  # Einmalig cachen
             
-            # Teile Daten auf
-            n_samples = len(processed_data)
-            n_test = int(n_samples * config["test_split"])
-            n_train = n_samples - n_test
+            # --- FIX: Dynamische Ermittlung der tatsächlichen Input-Größe ---
+            actual_input_size = X_train.shape[1]
             
-            indices = np.random.permutation(n_samples)
-            train_indices = indices[:n_train]
-            test_indices = indices[n_train:]
-            
-            train_data = processed_data[train_indices]
-            test_data = processed_data[test_indices]
-            
-            st.info(f"Aufteilung: {n_train} Training | {n_test} Test")
-            
-            # Initialisiere Netzwerk
+            # Initialisierung (He/Xavier-Varianz-Skalierung für stabileres Lernen)
             np.random.seed(42)
-            
-            W1 = np.random.normal(0, 0.1, (actual_input_size, config["hidden_size"])).astype(np.float32)
-            b1 = np.zeros((1, config["hidden_size"]), dtype=np.float32)
-            W2 = np.random.normal(0, 0.1, (config["hidden_size"], 1)).astype(np.float32)
+            W1 = (np.random.randn(actual_input_size, hidden_size) * np.sqrt(2.0 / actual_input_size)).astype(np.float32)
+            b1 = np.zeros((1, hidden_size), dtype=np.float32)
+            W2 = (np.random.randn(hidden_size, 1) * np.sqrt(2.0 / hidden_size)).astype(np.float32)
             b2 = np.zeros((1, 1), dtype=np.float32)
             
-            train_errors = []
-            test_errors = []
+            train_losses = []
+            test_losses = []
             
-            # Progress Bar
             progress_bar = st.progress(0)
-            status_text = st.empty()
+            status = st.empty()
             
-            # Training Loop
-            for epoch in range(config["epochs"]):
-                X_train = train_data[:, :-1].astype(np.float32)
-                y_train = train_data[:, -1:].astype(np.float32)
+            # UI-Update-Intervall dynamisch anpassen (bei vielen Daten seltener updaten)
+            ui_step = max(1, epochs // 20)
+            
+            # --- Optimierte Trainings-Schleife ---
+            for epoch in range(epochs):
                 
-                # Forward Pass
+                # Forward - Training
                 z1 = X_train @ W1 + b1
-                a1 = np.maximum(0, z1)  # ReLU
+                a1 = np.maximum(0.0, z1)  # ReLU
                 z2 = a1 @ W2 + b2
-                a2 = 1 / (1 + np.exp(-np.clip(z2, -500, 500)))  # Sigmoid
+                a2 = expit(np.clip(z2, -500.0, 500.0))  # C-optimierte, stabile Sigmoid
                 
+                # Loss - Training
                 train_loss = np.mean((a2 - y_train) ** 2)
-                train_errors.append(train_loss)
+                train_losses.append(train_loss)
                 
                 # Backpropagation
-                dz2 = (a2 - y_train) * a2 * (1 - a2)
-                dW2 = (a1.T @ dz2) / len(train_data) * config["learning_rate"]
-                db2 = np.mean(dz2, axis=0, keepdims=True) * config["learning_rate"]
+                dz2 = (a2 - y_train) * a2 * (1.0 - a2)
+                dW2 = (a1.T @ dz2) / n_train * learning_rate
+                db2 = np.mean(dz2, axis=0, keepdims=True) * learning_rate
                 
                 da1 = dz2 @ W2.T
-                dz1 = da1 * (z1 > 0)
-                dW1 = (X_train.T @ dz1) / len(train_data) * config["learning_rate"]
-                db1 = np.mean(dz1, axis=0, keepdims=True) * config["learning_rate"]
+                dz1 = da1 * (z1 > 0.0)
+                dW1 = (X_train_T @ dz1) / n_train * learning_rate
+                db1 = np.mean(dz1, axis=0, keepdims=True) * learning_rate
                 
+                # Gewichts-Update
                 W2 -= dW2
                 b2 -= db2
                 W1 -= dW1
                 b1 -= db1
                 
-                # Test Error
-                X_test = test_data[:, :-1].astype(np.float32)
-                y_test = test_data[:, -1:].astype(np.float32)
-                
-                z1_test = X_test @ W1 + b1
-                a1_test = np.maximum(0, z1_test)
-                z2_test = a1_test @ W2 + b2
-                a2_test = 1 / (1 + np.exp(-np.clip(z2_test, -500, 500)))
-                
-                test_loss = np.mean((a2_test - y_test) ** 2)
-                test_errors.append(test_loss)
-                
-                # Update Progress
-                if epoch % max(1, config["epochs"] // 20) == 0:
-                    progress_bar.progress(min(epoch / config["epochs"], 1.0))
-                    status_text.text(
-                        f"Epoch {epoch}/{config['epochs']} | "
-                        f"Train Loss: {train_loss:.4f} | "
-                        f"Test Loss: {test_loss:.4f}"
-                    )
+                # Forward - Test (Nur berechnen, wenn UI geupdated wird -> Spart enorm Zeit!)
+                if epoch % ui_step == 0 or epoch == epochs - 1:
+                    z1_test = X_test @ W1 + b1
+                    a1_test = np.maximum(0.0, z1_test)
+                    z2_test = a1_test @ W2 + b2
+                    a2_test = expit(np.clip(z2_test, -500.0, 500.0))
+                    test_loss = np.mean((a2_test - y_test) ** 2)
+                    test_losses.append(test_loss)
+                    
+                    progress_bar.progress(min(epoch / epochs, 1.0))
+                    status.text(f"Epoch {epoch}/{epochs} | Train: {train_loss:.4f} | Test: {test_loss:.4f}")
+                else:
+                    # Damit die Listenlänge synchron bleibt
+                    test_losses.append(test_losses[-1] if test_losses else train_loss)
             
             progress_bar.progress(1.0)
-            status_text.text("✓ Training abgeschlossen!")
+            status.text("Training abgeschlossen!")
             
-            # Speichere Model
+            # Speichere Modell mit der echten Input-Größe im Zustand ab
             st.session_state.model = {
                 "W1": W1, "b1": b1, "W2": W2, "b2": b2,
-                "input_size": actual_input_size,
-                "hidden_size": config["hidden_size"]
+                "input_size": actual_input_size, "hidden_size": hidden_size
             }
-            st.session_state.train_errors = train_errors
-            st.session_state.test_errors = test_errors
-            st.session_state.current_loss = test_errors[-1]
-            st.session_state.last_training_time = datetime.now()
+            st.session_state.train_losses = train_losses
+            st.session_state.test_losses = test_losses
             st.session_state.total_training_count += 1
-            st.session_state.data_info = data_info
             
-            st.success(f"✓ Training abgeschlossen! (Gesamt-Durchgänge: {st.session_state.total_training_count})")
+            st.success("Modell trainiert!")
             st.rerun()
+            
     
-    if load_checkpoint:
-        st.info("Checkpoint-Laden im Tab 'Checkpoints'")
-    
-    if reset_model:
-        if "model" in st.session_state:
-            del st.session_state.model
-            del st.session_state.train_errors
-            del st.session_state.test_errors
-            st.session_state.total_training_count = 0
-            st.success("✓ Modell zurückgesetzt")
-            st.rerun()
-    
-    # Zeige Trainingsergebnisse
-    if "model" in st.session_state and "train_errors" in st.session_state:
+    # Zeige Ergebnisse
+    if "model" in st.session_state and "train_losses" in st.session_state:
         st.markdown("---")
-        st.subheader("Trainings-Ergebnisse")
+        st.subheader("Trainingsergebnisse")
         
-        # Chart
         fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            y=st.session_state.train_errors,
-            mode='lines',
-            name='Training Loss',
-            line=dict(color='#5DBE50', width=3)
-        ))
-        
-        fig.add_trace(go.Scatter(
-            y=st.session_state.test_errors,
-            mode='lines',
-            name='Test Loss',
-            line=dict(color='#BF616A', width=3)
-        ))
-        
-        fig.update_layout(
-            title="Fehler-Entwicklung (MSE)",
-            xaxis_title="Epoche",
-            yaxis_title="MSE Loss",
-            hovermode="x unified",
-            template="plotly_white",
-            height=500
-        )
-        
+        fig.add_trace(go.Scatter(y=st.session_state.train_losses, name="Train", line=dict(color="green")))
+        fig.add_trace(go.Scatter(y=st.session_state.test_losses, name="Test", line=dict(color="red")))
+        fig.update_layout(xaxis_title="Epoch", yaxis_title="Loss", template="plotly_white", height=400)
         st.plotly_chart(fig, use_container_width=True)
         
-        # Metriken
         col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Final Training Loss", f"{st.session_state.train_errors[-1]:.6f}")
-        with col2:
-            st.metric("Final Test Loss", f"{st.session_state.test_errors[-1]:.6f}")
-        with col3:
-            improvement = ((st.session_state.train_errors[0] - st.session_state.train_errors[-1]) / st.session_state.train_errors[0] * 100)
-            st.metric("Verbesserung", f"{improvement:.1f}%")
+        col1.metric("Final Train Loss", f"{st.session_state.train_losses[-1]:.6f}")
+        col2.metric("Final Test Loss", f"{st.session_state.test_losses[-1]:.6f}")
+        improvement = ((st.session_state.train_losses[0] - st.session_state.train_losses[-1]) / st.session_state.train_losses[0] * 100)
+        col3.metric("Verbesserung", f"{improvement:.1f}%")
 
 
-# ================================================================================================
-# TAB 4: CHECKPOINTS
-# ================================================================================================
+# ───────────────────────────────────────────────────────────────────────────
+# TAB CHECKPOINTS: Modelle verwalten
+# ───────────────────────────────────────────────────────────────────────────
 
 with tab_checkpoint:
-    st.header("Checkpoint Management")
-    st.markdown("---")
+    st.subheader("Checkpoint Management")
     
-    checkpoint_manager = st.session_state.checkpoint_manager
+    col1, col2, col3 = st.columns(3)
     
-    col_save, col_load, col_list = st.columns(3)
+    with col1:
+        if st.button("Speichern", use_container_width=True):
+            if "model" not in st.session_state:
+                st.error("Kein Modell trainiert!")
+            else:
+                name = st.text_input("Name (optional):")
+                if st.button("Bestätigen"):
+                    cm = st.session_state.checkpoint_manager
+                    model = st.session_state.model
+                    weights = {k: v for k, v in model.items() if k not in ["input_size", "hidden_size"]}
+                    config = {"input_size": model["input_size"], "hidden_size": model["hidden_size"]}
+                    stats = {"final_loss": st.session_state.test_losses[-1], "epochs": len(st.session_state.train_losses)}
+                    
+                    cm.save(weights, config, stats, name or None)
+                    st.success("Checkpoint gespeichert")
     
-    with col_save:
-        save_checkpoint = st.button("Checkpoint speichern", use_container_width=True)
+    with col2, col3:
+        st.write("")
     
-    with col_load:
-        load_checkpoint_btn = st.button("Checkpoint laden", use_container_width=True)
-    
-    with col_list:
-        refresh_list = st.button("Liste aktualisieren", use_container_width=True)
-    
-    st.markdown("")
-    
-    # Checkpoint speichern
-    if save_checkpoint:
-        if "model" not in st.session_state:
-            st.error("❌ Kein trainiertes Modell vorhanden!")
-        else:
-            checkpoint_name = st.text_input("Checkpoint-Name (optional):")
-            
-            if st.button("✓ Speichern bestätigen"):
-                model_state = st.session_state.model
-                
-                training_stats = {
-                    "total_training_count": st.session_state.total_training_count,
-                    "train_errors": st.session_state.train_errors,
-                    "test_errors": st.session_state.test_errors,
-                    "last_epoch": len(st.session_state.train_errors),
-                    "normalization_params": st.session_state.data_info.get("normalization_params", {})
-                }
-                
-                config = {
-                    "input_size": st.session_state.model["input_size"],
-                    "hidden_size": st.session_state.model["hidden_size"],
-                    "learning_rate": st.session_state.config["learning_rate"],
-                    "description": checkpoint_name or "No description"
-                }
-                
-                filename = f"checkpoint_{checkpoint_name or 'auto'}.npz" if checkpoint_name else None
-                
-                try:
-                    filepath = checkpoint_manager.save_checkpoint(
-                        model_state,
-                        training_stats,
-                        config,
-                        filename
-                    )
-                    st.success(f"✓ Checkpoint gespeichert: {os.path.basename(filepath)}")
-                except Exception as e:
-                    st.error(f"❌ Fehler beim Speichern: {e}")
-    
-    # Checkpoint laden
     st.markdown("---")
     st.subheader("Verfügbare Checkpoints")
     
-    checkpoints = checkpoint_manager.list_checkpoints()
+    checkpoints = st.session_state.checkpoint_manager.list()
     
     if not checkpoints:
-        st.info("Noch keine Checkpoints gespeichert")
+        st.info("Keine Checkpoints vorhanden")
     else:
-        for idx, ckpt in enumerate(checkpoints):
-            with st.expander(f"{ckpt['filename']} | Training-Count: {ckpt['total_training_count']}"):
+        for ckpt in checkpoints:
+            with st.expander(f"{ckpt['name']} | Loss: {ckpt['stats'].get('final_loss', '?'):.4f}"):
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    st.write(f"**Timestamp:** {ckpt['timestamp']}")
+                    st.write(f"**Timestamp:** {ckpt['timestamp'][:10]}")
                     st.write(f"**Config:**")
-                    st.write(f"  - Input: {ckpt['config'].get('input_size')}")
-                    st.write(f"  - Hidden: {ckpt['config'].get('hidden_size')}")
-                    st.write(f"  - LR: {ckpt['config'].get('learning_rate')}")
+                    st.write(f"  Input: {ckpt['config'].get('input_size')}")
+                    st.write(f"  Hidden: {ckpt['config'].get('hidden_size')}")
                 
                 with col2:
-                    st.write(f"**Training Stats:**")
-                    st.write(f"  - Total Durchgänge: {ckpt['total_training_count']}")
-                    st.write(f"  - Final Train Loss: {ckpt['final_train_loss']:.6f}")
-                    st.write(f"  - Final Test Loss: {ckpt['final_test_loss']:.6f}")
-                
-                col_load_ckpt, col_delete_ckpt = st.columns(2)
-                
-                with col_load_ckpt:
-                    if st.button(f"Laden", key=f"load_{idx}"):
+                    if st.button("Laden", key=f"load_{ckpt['name']}"):
                         try:
-                            model_state, training_stats, config = checkpoint_manager.load_checkpoint(
-                                ckpt['filename']
-                            )
-                            
-                            st.session_state.model = model_state
-                            st.session_state.model["input_size"] = config.get("input_size", 19)
-                            st.session_state.model["hidden_size"] = config.get("hidden_size", 32)
-                            st.session_state.total_training_count = training_stats.get("total_training_count", 0)
-                            st.session_state.last_training_time = datetime.fromisoformat(ckpt['timestamp'])
-                            st.session_state.current_loss = training_stats.get("final_test_loss", 0.0)
-                            
-                            st.success("✓ Checkpoint geladen und Modell wiederhergestellt!")
-                            st.info(f"Training-Counter: {st.session_state.total_training_count}")
-                            
+                            w, cfg, sts = st.session_state.checkpoint_manager.load(ckpt['name'])
+                            model = {"W1": w["W1"], "b1": w["b1"], "W2": w["W2"], "b2": w["b2"]}
+                            model["input_size"] = cfg["input_size"]
+                            model["hidden_size"] = cfg["hidden_size"]
+                            st.session_state.model = model
+                            st.success("Geladen")
                         except Exception as e:
-                            st.error(f"❌ Fehler beim Laden: {e}")
-                
-                with col_delete_ckpt:
-                    if st.button(f"Löschen", key=f"delete_{idx}"):
-                        checkpoint_manager.delete_checkpoint(ckpt['filename'])
-                        st.success("✓ Checkpoint gelöscht")
+                            st.error(f"Fehler: {e}")
+                    
+                    if st.button("Löschen", key=f"del_{ckpt['name']}"):
+                        st.session_state.checkpoint_manager.delete(ckpt['name'])
                         st.rerun()
 
 
-# ================================================================================================
-# TAB 5: VORHERSAGEN
-# ================================================================================================
+# ───────────────────────────────────────────────────────────────────────────
+# TAB STATS: Modell-Informationen & Export/Import
+# ───────────────────────────────────────────────────────────────────────────
 
-with tab_predict:
-    st.header("Vorhersagen")
-    st.markdown("---")
+with tab_stats:
+    st.subheader("Modell-Statistiken")
     
-    if "model" not in st.session_state:
-        st.warning("Bitte trainieren Sie zunächst ein Modell!")
-    else:
-        st.subheader("Neue Eingabe testen")
+    col1, col2 = st.columns(2)
+    
+    # Modell-Info (nur wenn vorhanden)
+    with col1:
+        st.markdown("### Netzwerk-Architektur")
         
-        model = st.session_state.model
-        input_size = model["input_size"]
+        if "model" in st.session_state:
+            model = st.session_state.model
+            col_a, col_b, col_c = st.columns(3)
+            col_a.metric("Input Layer", model["input_size"])
+            col_b.metric("Hidden Layer", model["hidden_size"])
+            col_c.metric("Output Layer", 1)
+            
+            st.markdown("### Gewichte")
+            st.write(f"W1 (Input-Hidden): {model['W1'].shape}")
+            st.write(f"b1 (Bias): {model['b1'].shape}")
+            st.write(f"W2 (Hidden-Output): {model['W2'].shape}")
+            st.write(f"b2 (Bias): {model['b2'].shape}")
+            
+            st.markdown("### Trainings-Info")
+            col_x, col_y = st.columns(2)
+            col_x.metric("Trainings-Durchgänge", st.session_state.total_training_count)
+            if "test_losses" in st.session_state:
+                col_y.metric("Aktueller Loss", f"{st.session_state.test_losses[-1]:.6f}")
+        else:
+            st.info("Kein Modell geladen. Trainiere ein Modell oder importiere eines.")
+    
+    # Export / Import
+    with col2:
+        st.markdown("### Export / Import")
         
-        # Input-Felder
-        col_inputs = st.columns(min(5, input_size))
-        new_input = []
-        
-        for i in range(input_size):
-            with col_inputs[i % 5]:
-                val = st.number_input(
-                    f"Feature {i+1}",
-                    min_value=0.0,
-                    max_value=1.0,
-                    value=0.5,
-                    step=0.05,
-                    key=f"predict_input_{i}"
+        if "model" in st.session_state:
+            if st.button("Modell als JSON exportieren"):
+                export_data = {
+                    "W1": st.session_state.model["W1"].tolist(),
+                    "b1": st.session_state.model["b1"].tolist(),
+                    "W2": st.session_state.model["W2"].tolist(),
+                    "b2": st.session_state.model["b2"].tolist(),
+                    "config": {
+                        "input_size": st.session_state.model["input_size"],
+                        "hidden_size": st.session_state.model["hidden_size"]
+                    }
+                }
+                st.download_button(
+                    label="Download JSON",
+                    data=json.dumps(export_data, indent=2),
+                    file_name=f"model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 )
-                new_input.append(val)
         
-        st.markdown("")
-        
-        if st.button("Vorhersage machen", use_container_width=True):
-            X_pred = np.array(new_input, dtype=np.float32).reshape(1, -1)
-            
-            # Forward Pass
-            z1 = X_pred @ model["W1"] + model["b1"]
-            a1 = np.maximum(0, z1)
-            z2 = a1 @ model["W2"] + model["b2"]
-            a2 = 1 / (1 + np.exp(-np.clip(z2, -500, 500)))
-            
-            prediction = a2[0, 0]
-            is_pyramid = prediction > 0.5
-            
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                # Progress-Bar für Konfidenz
-                st.metric("Konfidenz", f"{prediction*100:.1f}%")
-                st.progress(float(prediction))
-            
-            with col2:
-                if is_pyramid:
-                    st.success("✓ PYRAMIDE erkannt")
-                else:
-                    st.info("✗ Keine Pyramide")
+        st.markdown("**JSON importieren**")
+        imported = st.file_uploader("Wähle eine JSON-Datei", type="json", key="import_json")
+        if imported:
+            try:
+                data = json.load(imported)
+                model = {
+                    "W1": np.array(data["W1"], dtype=np.float32),
+                    "b1": np.array(data["b1"], dtype=np.float32),
+                    "W2": np.array(data["W2"], dtype=np.float32),
+                    "b2": np.array(data["b2"], dtype=np.float32),
+                    "input_size": data["config"]["input_size"],
+                    "hidden_size": data["config"]["hidden_size"]
+                }
+                st.session_state.model = model
+                st.success("Modell erfolgreich importiert!")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Fehler beim Importieren: {e}")
 
 
-# ================================================================================================
+# ───────────────────────────────────────────────────────────────────────────
 # FOOTER
-# ================================================================================================
+# ───────────────────────────────────────────────────────────────────────────
 
 st.markdown("---")
-
-col_info1, col_info2, col_info3 = st.columns(3)
-
-with col_info1:
-    st.caption("**Neuronales Netz Konfiguration:**")
-    st.caption(f"Input: {st.session_state.config.get('input_size', '?')} | Hidden: {st.session_state.config.get('hidden_size', '?')} | Output: 1")
-
-with col_info2:
-    st.caption("**Training Stats:**")
-    st.caption(f"Gesamtzahl Durchgänge: {st.session_state.total_training_count}")
-
-
+st.caption("Informatik-Projekt | Pyramiden-Klassifikation mit neuronalen Netzen")

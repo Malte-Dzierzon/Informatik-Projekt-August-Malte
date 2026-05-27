@@ -1,7 +1,7 @@
 @echo off
-REM Starte die Streamlit App für Neuronales Netzwerk
+REM Starte die Streamlit App mit automatischer Dependency-Installation
 REM Doppelklick zum Ausführen
 
 cd /d "%~dp0"
-C:\Users\malte\.local\bin\python3.14.exe -m streamlit run app.py
+python setup_and_run.py
 pause
