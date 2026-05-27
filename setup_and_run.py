@@ -18,12 +18,14 @@ REQUIRED_PACKAGES = [
     "scipy",
     "pandas",
     "plotly",
-    "pyarrow"
+    "pyarrow",
+    "streamlit-agraph"
 ]
 
-# Mapping, falls der Importname im Code vom Pip-Paketnamen abweicht
+# Mapping, da der Importname im Python-Code oft anders geschrieben wird als bei pip
 IMPORT_MAPPING = {
-    "pyarrow": "pyarrow"  # Hier können Abweichungen explizit definiert werden
+    "pyarrow": "pyarrow",
+    "streamlit-agraph": "streamlit_agraph"  # Pip nutzt Bindestrich, Python nutzt Unterstrich
 }
 
 
@@ -85,5 +87,5 @@ if __name__ == "__main__":
     check_and_install_dependencies()
     print("-" * 50)
     
-    # 2. Dashoard-Prozess initialisieren
+    # 2. Dashboard-Prozess initialisieren
     start_streamlit_app()

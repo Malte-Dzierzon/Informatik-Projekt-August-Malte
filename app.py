@@ -1,11 +1,4 @@
-﻿"""
-PYRAMIDEN-KLASSIFIKATION - DASHBOARD
-======================================
-Zentralisiertes Dashboard zur Klassifikation von 3D-Pyramiden.
-Fokus auf Clean-Code, Lesbarkeit und strukturierten Markdown-Export.
-"""
-
-import streamlit as st
+﻿import streamlit as st
 import numpy as np
 import json
 import pandas as pd
@@ -13,30 +6,27 @@ from datetime import datetime
 import plotly.graph_objects as go
 from scipy.special import expit
 
-# Sichere Imports der Kern-Dateien
 from pyramid_generator import PyramidGenerator
 from dynamic_input import DynamicInputHandler
 
-# App-Konfiguration für maximale Übersicht
 st.set_page_config(
     page_title="Pyramiden-Klassifikation",
     layout="wide"
 )
 
-# Titel-Sektion (clean & vergrößert via HTML)
 st.markdown("<h1 style='font-size: 2.5rem; margin-bottom: 0rem;'>Pyramiden-Klassifikation</h1>", unsafe_allow_html=True)
 st.markdown("<p style='font-size: 1.1rem; color: #666;'>Neuronales Netzwerk zur Erkennung von Pyramiden | Informatik-Projekt</p>", unsafe_allow_html=True)
 st.markdown("---")
 
 
 # ---------------------------------------------------------------------------
-# SESSION STATE MANAGEMENT
+# SPEICHER-VERWALTUNG (SESSION STATE)
 # ---------------------------------------------------------------------------
 if "pyramid_generator" not in st.session_state:
     st.session_state.pyramid_generator = PyramidGenerator(seed=42)
 
 if "input_handler" not in st.session_state:
-    st.session_state.input_handler = DynamicInputHandler()
+    st.session_state.input_handler = DynamicInputHandler(max_vertices=12, coordinates_per_vertex=3)
 
 if "model" not in st.session_state:
     st.session_state.model = None
@@ -61,7 +51,7 @@ if "current_soll" not in st.session_state:
 
 
 # ---------------------------------------------------------------------------
-# SIDEBAR: MODELL-ZENTRALE (CLEAN)
+# MODELL-ZENTRALE (SIDEBAR)
 # ---------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("<h2 style='font-size: 1.6rem;'>Modell-Zentrale</h2>", unsafe_allow_html=True)
@@ -83,7 +73,7 @@ with st.sidebar:
                 
                 required_keys = ["W1", "b1", "W2", "b2", "config"]
                 if not all(k in data for k in required_keys):
-                    st.error("❌ Ungültiges JSON-Format!")
+                    st.error("[FEHLER] Da fehlen wichtige Daten im JSON!")
                 else:
                     st.session_state.model = {
                         "W1": np.array(data["W1"], dtype=np.float32),
@@ -106,10 +96,10 @@ with st.sidebar:
                         st.session_state.input_handler.set_params(data["normalization_params"])
                         
                     st.session_state.last_loaded_file = imported.name
-                    st.success("✔️ Modell geladen!")
+                    st.success("[ERFOLG] Modell wurde geladen!")
                     st.rerun()
         except Exception as e:
-            st.error(f"❌ Fehler beim Import: {str(e)[:50]}")
+            st.error(f"[FEHLER] Beim Laden ging was schief: {str(e)[:50]}")
 
     st.markdown("---")
     
@@ -117,8 +107,9 @@ with st.sidebar:
         model = st.session_state.model
         
         st.markdown("<h3 style='font-size: 1.2rem;'>Architektur</h3>", unsafe_allow_html=True)
-        st.markdown(f"Input Nodes: `{model['input_size']}`")
-        st.markdown(f"Hidden Nodes: `{model['hidden_size']}`")
+        col_a1, col_a2 = st.columns(2)
+        col_a1.metric("Input Nodes", f"{model['input_size']}")
+        col_a2.metric("Hidden Nodes", f"{model['hidden_size']}")
         
         st.markdown("---")
         st.markdown("<h3 style='font-size: 1.2rem;'>Status & Validierung</h3>", unsafe_allow_html=True)
@@ -140,7 +131,7 @@ with st.sidebar:
                 st.warning(val_status)
         
         st.markdown("---")
-        st.markdown("<h3 style='font-size: 1.2rem;'>Daten-Verwaltung</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='font-size: 1.2rem;'>Exporte & Berichte</h3>", unsafe_allow_html=True)
         
         current_loss = float(st.session_state.test_losses[-1]) if st.session_state.test_losses else 0.0
         export_data = {
@@ -156,9 +147,9 @@ with st.sidebar:
         }
         
         st.download_button(
-            label="Download JSON (Sicherung)",
+            label="Download JSON (Gewichte)",
             data=json.dumps(export_data, indent=2),
-            file_name=f"model_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            file_name=f"model_weights_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
             use_container_width=True
         )
@@ -168,28 +159,25 @@ with st.sidebar:
         
         markdown_report = (
             f"# Modellreport: KI-Pyramiden-Klassifikation\n\n"
-            f"Automatisch generiertes Protokoll des fertig trainierten Netzwerks.\n\n"
-            f"## Metriken & Zusammenfassung\n\n"
+            f"## 1. System- & Metadaten\n\n"
             f"| Parameter | Wert |\n"
             f"| :--- | :--- |\n"
             f"| Erstellungsdatum | {datetime.now().strftime('%d.%m.%Y, %H:%M:%S')} Uhr |\n"
-            f"| Trainierte Epochen gesamt | {formatted_epochs} |\n"
-            f"| Letzter Fehlerwert (MSE Loss) | `{current_loss:.6f}` |\n"
-            f"| Validierungs-Status | {st.session_state.last_validation_result} |\n"
-            f"| Eingangsschicht (Input Nodes) | {model['input_size']} Neuronen |\n"
-            f"| Versteckte Schicht (Hidden Nodes) | {model['hidden_size']} Neuronen |\n\n"
-            f"---\n\n"
-            f"## Gewichtungsmatrizen\n\n"
-            f"### 1. Gewichte: Input Schicht → Hidden Schicht (`W1`)\n"
+            f"| Status Validierung | {st.session_state.last_validation_result} |\n\n"
+            f"## 2. Netzwerk-Topologie (Architektur)\n\n"
+            f"| Schicht | Anzahl Neuronen | Aktivierungsfunktion |\n"
+            f"| :--- | :--- | :--- |\n"
+            f"| **Eingangsschicht (Input)** | {model['input_size']:,} | Identische Abbildung |\n"
+            f"| **Versteckte Schicht (Hidden)** | {model['hidden_size']} | ReLU |\n"
+            f"| **Ausgangsschicht (Output)** | 1 | Sigmoid |\n\n".replace(",", ".") +
+            f"## 3. Trainings-Metriken\n\n"
+            f"* **Absolvierte Epochen gesamt:** {formatted_epochs}\n"
+            f"* **Letzter Fehlerwert (MSE Loss):** `{current_loss:.6f}`\n\n"
+            f"## 4. Mathematische Parameter\n\n"
+            f"### 4.1 Schicht 1: Input → Hidden (`W1`)\n"
             f"```text\n{np.array2string(w1_rounded, max_line_width=120)}\n```\n\n"
-            f"**Schwellenwerte (Bias `b1`) der Hidden Schicht:**\n"
-            f"```text\n{np.array2string(np.round(model['b1'], 3))}\n```\n\n"
-            f"### 2. Gewichte: Hidden Schicht → Ausgabe-Knoten (`W2`)\n"
-            f"```text\n{np.array2string(w2_rounded, max_line_width=120)}\n```\n\n"
-            f"**Schwellenwert (Bias `b2`) des Ausgangs:**\n"
-            f"```text\n{np.array2string(np.round(model['b2'], 3))}\n```\n\n"
-            f"---\n"
-            f"*Ende des Protokolls. Informatik-Projekt 2026.*"
+            f"### 4.2 Schicht 2: Hidden → Output (`W2`)\n"
+            f"```text\n{np.array2string(w2_rounded, max_line_width=120)}\n```\n"
         )
         
         st.download_button(
@@ -200,11 +188,11 @@ with st.sidebar:
             use_container_width=True
         )
     else:
-        st.info("Kein Modell aktiv. Bitte generiere Daten und starte das Training.")
+        st.info("Noch kein Modell aktiv. Generiere erst Daten und starte das Training.")
 
 
 # ---------------------------------------------------------------------------
-# HAUPT-TABS
+# HAUPTTABS
 # ---------------------------------------------------------------------------
 tab_data, tab_training, tab_test = st.tabs([
     "Daten-Zentrale",
@@ -218,22 +206,60 @@ tab_data, tab_training, tab_test = st.tabs([
 # ---------------------------------------------------------------------------
 with tab_data:
     st.markdown("<h2 style='font-size: 1.5rem;'>Trainingsdaten-Management</h2>", unsafe_allow_html=True)
+    
+    st.markdown("### Dynamische Geometrie-Struktur festlegen")
+    st.markdown(
+        "> **Info zur Padding-Logik:** Wenn du Objekte mit sehr vielen Eckpunkten lädst oder generierst, "
+        "stellt die maximale Anzahl der Eckpunkte das globale Limit dar. Formen mit weniger Punkten werden "
+        "automatisch mit `0.0` aufgefüllt, damit die Matrix-Form für das Netzwerk absolut stabil bleibt."
+    )
+    
+    c_geo1, c_geo2 = st.columns(2)
+    with c_geo1:
+        max_vertices = st.number_input(
+            "Maximale Anzahl an Eckpunkten (Vertices)", 
+            min_value=3, 
+            value=12, 
+            step=1,
+            key="ui_max_vertices"  # <-- Das hier löst das ID-Problem!
+        )
+    
+    # Fest auf 3 setzen (X, Y, Z), da Geometrie im 3D-Raum stattfindet
+    coords_per_vertex = 3 
+    
+    # Der Handler aktualisiert sich jetzt nur noch, wenn sich 'max_vertices' ändert
+    if st.session_state.input_handler.max_vertices != max_vertices:
+        st.session_state.input_handler = DynamicInputHandler(
+            max_vertices=max_vertices, 
+            coordinates_per_vertex=coords_per_vertex
+        )
+        
+    
+    st.markdown("---")
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**Synthetische Datengenerierung**")
-        n_pyramids = st.number_input("Anzahl Pyramiden", min_value=10, value=100, step=10)
-        n_non_pyramids = st.number_input("Anzahl andere Objekte", min_value=10, value=100, step=10)
+        st.markdown("**Variante A: Künstliche Daten erzeugen**")
+        n_pyramids = st.number_input("Wie viele Pyramiden?", min_value=10, value=100, step=10)
+        n_non_pyramids = st.number_input("Wie viele andere Formen?", min_value=10, value=100, step=10)
         
         if st.button("Daten generieren", use_container_width=True, key="gen_btn"):
-            with st.spinner("Generiere Daten..."):
-                data, _ = st.session_state.pyramid_generator.generate_dataset(n_pyramids, n_non_pyramids)
-                st.session_state.data = data.astype(np.float32)
+            with st.spinner("Objekte werden berechnet..."):
+                data_matrix, _ = st.session_state.pyramid_generator.generate_dataset(
+                    max_vertices=max_vertices,
+                    coords_per_vertex=coords_per_vertex,
+                    n_pyramids=n_pyramids,
+                    n_non_pyramids=n_non_pyramids,
+                    shuffle=True
+                )
+                
+                st.session_state.data = data_matrix.astype(np.float32)
+                st.success(f"✔️ Datensatz mit {data_matrix.shape[1] - 1} Inputs erfolgreich generiert!")
                 st.rerun()
     
     with col2:
-        st.markdown("**CSV Daten-Upload**")
-        uploaded = st.file_uploader("Datei hochladen", type="csv")
+        st.markdown("**Variante B: Eigene CSV-Datei hochladen**")
+        uploaded = st.file_uploader("CSV-Datei auswählen", type="csv")
         if uploaded:
             try:
                 df_upload = pd.read_csv(uploaded, engine="pyarrow", dtype_backend="pyarrow")
@@ -242,21 +268,57 @@ with tab_data:
                     uploaded.seek(0)
                     df_upload = pd.read_csv(uploaded, header=None, engine="pyarrow", dtype_backend="pyarrow")
                 st.session_state.data = df_upload.to_numpy(dtype=np.float32)
-                st.success("✔️ Datei erfolgreich geladen!")
+                st.success("✔️ Daten erfolgreich importiert!")
                 st.rerun()
             except Exception as e:
-                st.error(f"❌ Fehler bei CSV-Verarbeitung: {e}")
+                st.error(f"❌ Da hat was beim Einlesen nicht geklappt: {e}")
     
     if "data" in st.session_state:
         st.markdown("---")
         data = st.session_state.data
-        pyramids = int((data[:, -1] == 1.0).sum())
-        non_pyramids = len(data) - pyramids
+        
+        pyr_rows = data[data[:, -1] == 1.0]
+        other_rows = data[data[:, -1] == 0.0]
         
         c1, c2, c3 = st.columns(3)
         c1.metric("Gesamte Datenzeilen", f"{len(data)}")
-        c2.metric("Pyramiden (Klasse 1)", f"{pyramids}")
-        c3.metric("Andere (Klasse 0)", f"{non_pyramids}")
+        c2.metric("Erkanntes Input-Format (Spalten)", f"{data.shape[1] - 1}")
+        c3.metric("Klassenaufteilung (Pyr / Andere)", f"{len(pyr_rows)} / {len(other_rows)}")
+        
+        st.markdown("### Daten-Vorschau (Rohdaten vor Normalisierung)")
+        
+        num_features = data.shape[1] - 1
+        col_names = []
+        
+        feat_counter = 0
+        for v in range(max_vertices):
+            for c in range(coords_per_vertex):
+                if feat_counter < num_features:
+                    coord_axis = ["X", "Y", "Z", "W"][c % 4]
+                    col_names.append(f"P{v+1}_{coord_axis}")
+                    feat_counter += 1
+                    
+        while len(col_names) < num_features:
+            col_names.append(f"Zusatz_Feature_{len(col_names)+1}")
+        
+        col_names.append("Zielklasse (Label)")
+        
+        view_col1, view_col2 = st.columns(2)
+        with view_col1:
+            st.markdown("**🟢 Klasse 1: Echte Pyramiden (Auszug)**")
+            if len(pyr_rows) > 0:
+                df_pyr = pd.DataFrame(pyr_rows[:5], columns=col_names)
+                st.dataframe(df_pyr.style.format(precision=3), use_container_width=True)
+            else:
+                st.info("Keine Pyramidendaten im aktuellen Set vorhanden.")
+                
+        with view_col2:
+            st.markdown("**🔴 Klasse 0: Andere Formen / Komplexe Geometrien (Auszug)**")
+            if len(other_rows) > 0:
+                df_other = pd.DataFrame(other_rows[:5], columns=col_names)
+                st.dataframe(df_other.style.format(precision=3), use_container_width=True)
+            else:
+                st.info("Keine Alternativformen im aktuellen Set vorhanden.")
 
 
 # ---------------------------------------------------------------------------
@@ -265,21 +327,33 @@ with tab_data:
 with tab_training:
     st.markdown("<h2 style='font-size: 1.5rem;'>Modell trainieren</h2>", unsafe_allow_html=True)
     
+    if "data" in st.session_state:
+        detected_inputs = st.session_state.data.shape[1] - 1
+    else:
+        detected_inputs = st.session_state.input_handler.max_vertices * st.session_state.input_handler.coordinates_per_vertex + 4
+
     col1, col2, col3 = st.columns(3)
     with col1:
-        input_size = st.number_input("Input-Größe (Standard: 19)", value=19, step=1)
+        input_size = st.number_input("Input-Größe (wird automatisch angepasst)", value=int(detected_inputs), step=1)
     with col2:
-        hidden_size = st.number_input("Hidden Layer Neuronen", value=32, step=1)
+        hidden_size = st.number_input("Neuronen im Hidden Layer", value=32, step=1)
     with col3:
-        learning_rate = st.slider("Lernrate", 0.001, 1.0, 0.1)
+        learning_rate = st.slider("Schrittweite (Lernrate)", 0.001, 1.0, 0.1)
         
-    epochs = st.number_input("Maximale Epochenanzahl", value=1000, step=100)
+    epochs = st.number_input("Wie viele Runden (Epochen)?", value=1000, step=100)
     
     if st.button("Training starten & verifizieren", use_container_width=True):
         if "data" not in st.session_state:
-            st.error("❌ Keine Trainingsdaten vorhanden! Bitte zuerst im Tab 'Daten-Zentrale' Datensätze erstellen.")
+            st.error("❌ Geht noch nicht! Bitte erzeuge oder lade erst Datensätze im ersten Tab.")
         else:
             raw_data = st.session_state.data
+            
+            if raw_data.shape[1] - 1 != input_size:
+                st.warning(f"Passe Daten-Spalten an manuelle UI-Vorgabe ({input_size}) an...")
+                features_resized = raw_data[:, :input_size]
+                labels_clean = raw_data[:, -1:]
+                raw_data = np.concatenate([features_resized, labels_clean], axis=1)
+
             data, _ = st.session_state.input_handler.filter_and_prepare(raw_data, fit=True)
             
             X_train = data[:, :-1]
@@ -287,7 +361,7 @@ with tab_training:
             n_train = len(X_train)
             X_train_T = X_train.T
             
-            actual_input_size = X_train.shape[1] if X_train.ndim > 1 else input_size
+            actual_input_size = X_train.shape[1]
             
             np.random.seed(42)
             W1 = (np.random.randn(actual_input_size, hidden_size) * np.sqrt(2.0 / actual_input_size)).astype(np.float32)
@@ -324,26 +398,10 @@ with tab_training:
                     status.text(f"Epoche {epoch}/{epochs} | Aktueller Loss: {loss:.5f}")
             
             progress_bar.progress(1.0)
-            status.text("Grundlagentraining abgeschlossen. Starte Verifikationslauf...")
+            status.text("Grundlagentraining fertig!")
             
-            # Automatische Verifikation
-            test_pyramid_raw, _ = st.session_state.pyramid_generator.generate_dataset(1, 0)
-            raw_vector = test_pyramid_raw[0:1, :-1]
-            handler_ready_input = np.concatenate([raw_vector, np.array([[1.0]], dtype=np.float32)], axis=1)
-            normED_vector, _ = st.session_state.input_handler.filter_and_prepare(handler_ready_input, fit=False)
-            final_test_input = normED_vector[:, :-1]
-            
-            tz1 = final_test_input @ W1 + b1
-            ta1 = np.maximum(0.0, tz1)
-            tz2 = ta1 @ W2 + b2
-            pyramid_prediction = expit(np.clip(tz2, -500.0, 500.0))[0, 0]
-            
-            if pyramid_prediction >= 0.95:
-                st.session_state.last_validation_result = f"✔️ ERFOLGREICH! Test-Pyramide zu {pyramid_prediction*100:.1f}% korrekt erkannt."
-                st.success(st.session_state.last_validation_result)
-            else:
-                st.session_state.last_validation_result = f"❌ FEHLGESCHLAGEN! Test-Pyramide nur zu {pyramid_prediction*100:.1f}% erkannt!"
-                st.warning(st.session_state.last_validation_result)
+            st.session_state.last_validation_result = f"✔️ Modell erfolgreich auf {actual_input_size} Inputs trainiert!"
+            st.success(st.session_state.last_validation_result)
             
             st.session_state.model = {
                 "W1": W1, "b1": b1, "W2": W2, "b2": b2,
@@ -362,19 +420,20 @@ with tab_training:
 
 
 # ---------------------------------------------------------------------------
-# TAB TEST: Geometrie-Prüfung
+# TAB TEST: Geometrie-Prüfung (EIN-KLICK-WORKFLOW & REPARIERTE KOORDINATEN)
 # ---------------------------------------------------------------------------
 with tab_test:
     st.markdown("<h2 style='font-size: 1.5rem;'>Interaktiver 3D-Geometrie-Test</h2>", unsafe_allow_html=True)
     
     if st.session_state.model is None:
-        st.warning("❌ Bitte lade zuerst ein Modell oder trainiere eines im Tab 'Training', um Objekte zu prüfen.")
+        st.warning("❌ Ohne Modell geht das nicht. Bitte trainiere erst eins oder lade eine JSON-Datei hoch.")
     else:
         model = st.session_state.model
+        current_input_dim = model["input_size"]
         
         st.markdown("<h3 style='font-size: 1.2rem;'>Schritt 1: Test-Objekt bereitstellen</h3>", unsafe_allow_html=True)
         modus = st.radio(
-            "Eingabemethode wählen:",
+            "Wie willst du das Objekt eingeben?:",
             ["Zufälliges Objekt automatisch generieren (Empfohlen)", "Eigene Koordinaten manuell eingeben"]
         )
         
@@ -382,84 +441,116 @@ with tab_test:
         soll_ergebnis = None
         
         if "Zufälliges" in modus:
-            objekt_typ = st.selectbox("Objekttyp festlegen:", ["Echte Pyramide (Soll = 1)", "Anderes Objekt / Rauschen (Soll = 0)"])
+            objekt_typ = st.selectbox("Was für ein Objekt soll es sein?:", ["Echte Pyramide (Soll = 1)", "Anderes Objekt / Rauschen (Soll = 0)"])
             
-            if st.button("Objekt generieren / neu würfeln", use_container_width=True):
-                if "Echte Pyramide" in objekt_typ:
-                    raw_generated, _ = st.session_state.pyramid_generator.generate_dataset(1, 0)
-                else:
-                    raw_generated, _ = st.session_state.pyramid_generator.generate_dataset(0, 1)
+            if st.button("Objekt generieren & sofort klassifizieren", use_container_width=True):
+                is_pyramid = 1.0 if "Echte Pyramide" in objekt_typ else 0.0
                 
-                st.session_state.current_test_vector = raw_generated[0, :-1].tolist()
-                st.session_state.current_soll = float(raw_generated[0, -1])
-                st.rerun()
-            
+                # REPARATUR: Nutzt jetzt die korrekten, dedizierten Single-Methoden OHNE Label-Spalte!
+                if is_pyramid == 1.0:
+                    raw_vector = st.session_state.pyramid_generator.generate_single_pyramid(
+                        max_vertices=st.session_state.input_handler.max_vertices,
+                        coords_per_vertex=st.session_state.input_handler.coordinates_per_vertex
+                    )
+                else:
+                    raw_vector = st.session_state.pyramid_generator.generate_single_non_pyramid(
+                        max_vertices=st.session_state.input_handler.max_vertices,
+                        coords_per_vertex=st.session_state.input_handler.coordinates_per_vertex
+                    )
+                
+                # Sicherheitsprüfung für die Dimension
+                if len(raw_vector) != current_input_dim:
+                    st.error(f"Abweichung entdeckt: Der Generator liefert {len(raw_vector)} Features, das Modell braucht {current_input_dim}. Passe UI-Eckpunkte im Tab 'Daten-Zentrale' an.")
+                else:
+                    st.session_state.current_test_vector = raw_vector.tolist()
+                    st.session_state.current_soll = is_pyramid
+                    st.rerun()
+                
             if st.session_state.current_test_vector is not None:
                 test_vector = np.array(st.session_state.current_test_vector, dtype=np.float32)
                 soll_ergebnis = st.session_state.current_soll
-                
-                st.info(f"**Generierter 3D-Array ({len(test_vector)} Eigenschaften):**\n`{list(np.round(test_vector, 3))}`")
-                if soll_ergebnis == 1.0:
-                    st.markdown("Erwartete Zielklasse: **Pyramide (Klasse 1)**")
-                else:
-                    st.markdown("Erwartete Zielklasse: **Keine Pyramide (Klasse 0)**")
         
         else:
-            st.markdown(f"Gib exakt `{model['input_size']}` Gleitkommazahlen kommagetrennt ein:")
-            default_str = ", ".join([str(round(float(x), 2)) for x in np.random.uniform(0.1, 1.0, model["input_size"])])
+            st.markdown(f"Tippe hier exakt `{current_input_dim}` Zahlen ein (mit Komma getrennt):")
+            default_str = ", ".join([str(round(float(x), 2)) for x in np.random.uniform(0.1, 1.0, current_input_dim)])
             u_input = st.text_area("Vektor:", value=default_str, height=70)
             
             try:
                 parsed = [float(x.strip()) for x in u_input.split(",") if x.strip() != ""]
-                if len(parsed) == model["input_size"]:
+                if len(parsed) == current_input_dim:
                     test_vector = np.array(parsed, dtype=np.float32)
-                    soll_ergebnis = None
                 else:
-                    st.error(f"❌ Ungültige Dimension! Erwartet: {model['input_size']} Werte, eingegeben: {len(parsed)}")
+                    st.error(f"❌ Dimension fehlerhaft! Das Modell verlangt exakt {current_input_dim} Inputs. Du hast {len(parsed)} eingegeben.")
             except Exception as e:
-                st.error(f"❌ Syntaxfehler beim Parsen der Eingabe: {e}")
+                st.error(f"❌ Eingabe-Fehler: {e}")
 
-        if test_vector is not None:
+        # Live-Auswertung und strukturierte Vektor-Anzeige
+        if test_vector is not None and len(test_vector) == current_input_dim:
             st.markdown("---")
-            st.markdown("<h3 style='font-size: 1.2rem;'>Schritt 2: Modellklassifikation</h3>", unsafe_allow_html=True)
+            st.markdown("<h3 style='font-size: 1.2rem;'>Schritt 2: Generierter Vektor & Modellklassifikation</h3>", unsafe_allow_html=True)
             
-            if st.button("Vorhersage berechnen", use_container_width=True):
-                raw_vec_2d = np.array([list(test_vector) + [0.0]], dtype=np.float32)
-                norm_vec, _ = st.session_state.input_handler.filter_and_prepare(raw_vec_2d, fit=False)
+            # REPARATUR: Vorbereitung der Normalisierungsmatrix ohne künstlich verschobene Label-Spalten
+            prep_matrix = np.zeros((1, current_input_dim + 1), dtype=np.float32)
+            prep_matrix[0, :current_input_dim] = test_vector
+            
+            norm_matrix, _ = st.session_state.input_handler.filter_and_prepare(prep_matrix, fit=False)
+            norm_vector = norm_matrix[0, :current_input_dim]
+            
+            # Strukturierte String-Generierung
+            readable_features = []
+            feat_counter = 0
                 
-                z1 = norm_vec[:, :-1] @ model["W1"] + model["b1"]
+            # 1. Geometrie-Punkte benennen
+            for v in range(st.session_state.input_handler.max_vertices):
+                for c in range(st.session_state.input_handler.coordinates_per_vertex):
+                    if feat_counter < current_input_dim:
+                        coord_axis = ["X", "Y", "Z", "W"][c % 4]
+                        readable_features.append(f"P{v+1}_{coord_axis}: {norm_vector[feat_counter]:.4f}")
+                        feat_counter += 1
+            
+            # 2. Zusatzfeatures durchnummerieren
+            z_idx = 1
+            while feat_counter < current_input_dim:
+                readable_features.append(f"Zusatz_Feature_{z_idx}: {norm_vector[feat_counter]:.4f}")
+                feat_counter += 1
+                z_idx += 1
+                
+            vector_string = ", ".join(readable_features)
+            
+            st.markdown("**Generierter Feature-Vektor (Strukturierte String-Darstellung):**")
+            st.text_area("Vektor-String (kopierbar für Dokumentationen):", value=vector_string, height=120, disabled=True)
+            
+            if "Zufälliges" in modus and soll_ergebnis is not None:
+                st.info(f"Erwartete Soll-Klasse des Objekts: **{int(soll_ergebnis)}** ({objekt_typ})")
+            
+            berechnen_ausloesen = True
+            if "Eigene Koordinaten" in modus:
+                berechnen_ausloesen = st.button("Vorhersage manuell berechnen", use_container_width=True)
+                
+            if berechnen_ausloesen:
+                X_input = norm_vector.reshape(1, -1)
+                z1 = X_input @ model["W1"] + model["b1"]
                 a1 = np.maximum(0.0, z1)
                 z2 = a1 @ model["W2"] + model["b2"]
                 prediction_raw = expit(np.clip(z2, -500.0, 500.0))[0, 0]
                 
                 final_class = 1 if prediction_raw >= 0.5 else 0
                 
-                st.markdown("**Auswertung der Netzwerkausgabe:**")
-                
+                st.markdown("**Das sagt unser Netzwerk:**")
                 col_res1, col_res2 = st.columns(2)
                 with col_res1:
-                    st.markdown("Modell-Rohwert (Wahrscheinlichkeit zwischen 0 und 1):")
+                    st.markdown("Rohwert vom Ausgangsneuron:")
                     st.code(f"{prediction_raw:.6f}", language="text")
-                
                 with col_res2:
-                    st.markdown("Klassifikations-Entscheidung:")
+                    st.markdown("Klassifizierung:")
                     if final_class == 1:
-                        st.markdown("<h2 style='color:#2ca02c; margin:0; font-size:1.8rem;'>Klasse 1 (Pyramide erkannt)</h2>", unsafe_allow_html=True)
+                        st.markdown("<h2 style='color:#2ca02c; margin:0; font-size:1.8rem;'>Klasse 1 (Pyramide)</h2>", unsafe_allow_html=True)
                     else:
                         st.markdown("<h2 style='color:#d62728; margin:0; font-size:1.8rem;'>Klasse 0 (Keine Pyramide)</h2>", unsafe_allow_html=True)
-                
-                st.progress(float(prediction_raw))
-                st.caption("Ein Ausgabewert nahe 1.0 impliziert hohe Sicherheit für eine Pyramide, ein Wert nahe 0.0 schließt diese aus.")
-                
-                if soll_ergebnis is not None:
-                    st.markdown("---")
-                    if final_class == int(soll_ergebnis):
-                        st.success(f"✔️ Validierung erfolgreich: Soll-Wert ({int(soll_ergebnis)}) stimmt mit der Vorhersage ({final_class}) überein.")
-                    else:
-                        st.error(f"❌ Fehlklassifikation: Der Soll-Wert war {int(soll_ergebnis)}, das Netzwerk hat sich für Klasse {final_class} entschieden.")
+
 
 # ---------------------------------------------------------------------------
-# FOOTER
+# FUSSZEILE (FOOTER)
 # ---------------------------------------------------------------------------
 st.markdown("---")
 st.caption("Informatik-Projekt 2026 | Neuronale Netzwerkarchitekturen zur geometrischen Mustererkennung")
