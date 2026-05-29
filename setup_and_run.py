@@ -3,13 +3,16 @@ AUTOMATISCHES SETUP & START-SKRIPT
 ==================================
 Überprüft die Abhängigkeiten und startet das Pyramiden-Dashboard
 ordnungsgemäß im nativen Streamlit-Laufzeitmodus.
-Fokus auf Clean-Code, professionelle Log-Ausgaben und Pfadsicherheit.
 """
 
 import subprocess
 import sys
 import os
 import importlib.util
+import time
+import random
+
+from debug_utils import debug_error, debug_info
 
 # Pip-Paketnamen, die installiert werden müssen
 REQUIRED_PACKAGES = [
@@ -17,75 +20,178 @@ REQUIRED_PACKAGES = [
     "numpy",
     "scipy",
     "pandas",
-    "plotly",
-    "pyarrow",
-    "streamlit-agraph"
+    "plotly"
 ]
 
-# Mapping, da der Importname im Python-Code oft anders geschrieben wird als bei pip
-IMPORT_MAPPING = {
-    "pyarrow": "pyarrow",
-    "streamlit-agraph": "streamlit_agraph"  # Pip nutzt Bindestrich, Python nutzt Unterstrich
-}
+IMPORT_MAPPING = {}
+
+# Die originale Pyramide, exakt block-formatiert gegen Verzerrungen und Zeilenbugs
+PYRAMID_LINES = [
+    "⠀⠠⢄⢠⢲⣒⠧⡐⢄⢢⠰⢠⠄⡀⠰⢢⠔⡢⠔⡢⢄⠀⠆⡴⡰⢠⠤⡀⠐⠹⢶⣒⢖⢢⢖⡰⢂⠦⡤⡀⠠⡀⠀⠲⢒⡔⣢⠔⡰⢠⠄⢢⡐⢠⢂⡔⢠⠄⡄⠂⡄⠠⢀⠀⡀",
+    "⢈⠱⡌⢢⢯⡝⢢⡉⢦⡑⢎⡡⢎⡐⠈⣇⢮⢱⡹⣰⣉⠦⠘⢰⢻⣦⠳⣱⠀⢀⠈⢻⣿⣔⡧⣽⢩⣎⡵⣩⡤⠐⢆⠀⠈⠑⠃⠞⢱⠣⡝⡴⣈⠇⢦⡘⢆⠎⡔⡡⢂⠅⠢⢌⠠⢁⠈⠄⠂⠁⠠⠀⠄",
+    "⢠⠣⡜⢣⡛⡌⠧⣜⡡⢚⠥⣚⠤⣊⠄⢺⣬⠳⡼⣱⢎⡼⡀⠀⠑⣾⣧⡳⣍⠀⠣⢄⠘⢿⣾⣵⣻⣜⣷⣣⢿⡵⡈⢧⡀⠃⠜⣠⢂⢄⡉⠐⠹⣌⠧⣘⡍⡜⢢⡱⠌⣌⠑⡠⠒⡈⠄⢂⠡⠈⠄⡐⠀⡈⠀⠁",
+    "⢄⡳⡜⢧⡽⣖⡳⣬⢳⡝⣮⣜⡱⢆⠢⢹⣎⡿⡵⢯⣞⡵⡃⢈⣆⠐⢿⣽⡚⣥⠘⣦⡁⠈⢻⣯⣿⢾⣭⣟⣯⢿⣵⡈⢷⡄⢡⠂⡄⠈⠘⠕⣆⣀⠘⠐⠌⡐⠃⠤⠑⡠⠊⠄⡑⠠⠈⠄⠂⢁⠠⠀⠀⠀⠀⠁",
+    "⣌⡳⣝⢧⣿⣻⣷⣭⢗⣻⢶⣭⢳⣍⢎⠰⣿⣻⡟⣿⢯⣷⡁⢠⢿⣧⡈⢳⣿⡳⠆⢹⣿⣅⡂⢹⣿⢿⣾⣟⣾⡿⣾⣷⠘⣿⡄⠳⣌⢆⠀⠀⠀⠈⠳⣦⡀⠀⠈⠀⠀⠀⠐⠀⠀⠀⠁⠀⠈",
+    "⢢⣟⣼⢻⣷⣿⣷⡿⣿⣽⣳⣯⢷⣎⡎⡄⣿⣷⣿⢿⣻⢾⠁⣸⠘⣿⣷⡄⠻⣧⡟⠀⣿⣿⣦⡀⠙⣿⣿⡾⣿⣽⣿⣽⣆⢸⣿⡄⠹⣞⡕⡀⠀⠀⠀⠀⠙⢦⡀",
+    "⣹⢾⡽⣻⣿⣾⡿⣿⣷⣻⣷⢯⣿⢶⡹⠄⣿⣿⢾⣿⢿⣻⠀⣷⡂⣿⣿⣿⠄⠹⣿⣃⠈⣉⣉⣉⣀⠙⣷⣿⢿⣽⣾⣟⣿⡀⢿⣷⡀⠛⣿⣮⣆⠀⠀⠀⠀⠀⠙⢦⡀",
+    "⢫⣿⣽⣻⣷⡿⣿⣿⡿⣽⡿⣿⣾⢯⡟⡆⣹⣿⡿⣯⣿⡏⢘⡮⠓⠉⣁⣤⣴⣆⠹⣷⠈⣿⣿⣿⣿⡄⠙⣿⣿⢯⣿⣾⢿⣇⢸⣿⣷⠀⠱⢾⣻⣧⡀⠀⠀⠀⠀⠀⠳⣄",
+    "⢸⣷⡿⣽⣾⢿⣿⣷⣿⢿⣻⣿⢾⡿⣝⠦⢹⣿⣟⣿⣷⠁⢁⣤⣶⣿⣿⣿⣿⣿⣧⠸⡆⢻⣿⣿⣿⣯⣃⠸⣿⡿⣯⣿⡿⣿⠀⣿⣿⡆⠀⠈⠳⣟⣷⡄⠀⠀⠀⠀⠀⠈⢣⡀⠀⠀⠀⢀⠀⠀⠀⠀⡈⠐⠀⠂",
+    "⡇⢿⣟⣿⣽⡿⣷⣿⣯⣿⣿⣽⣿⣻⡽⢎⢸⣿⣿⣽⡞⢰⣟⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠘⣿⠻⣿⡟⢁⣆⠹⣿⣟⣷⣿⢿⡇⣿⢿⣿⠀⠀⠀⠙⢯⣿⣆⠀⠀⠂⠀⠀⠀⠱⡀⠀⠀⠀⠀⠀⠀⠀⠄⡀⢀",
+    "⣿⡸⣿⣏⣿⣹⣿⣷⣿⢿⣾⡿⣾⣿⣹⠇⣸⣿⣷⣿⠁⣾⣿⣿⣿⣿⣿⡿⣁⣿⣿⡿⠇⠀⠀⠀⠀⠀⠉⠏⠀⢹⣿⣏⣿⣿⡇⢹⣿⣿⡇⠀⠀⠀⠀⢿⣹⣇⠀⠀⠀⠆⠀⠀⢱⠀⠀⠀⠀⢀⠀⠰⠆⡀⠀⠀⠀⠀⠰",
+    "⢿⣧⢻⣿⣽⣿⣳⣿⣯⣿⣯⣿⣟⣷⣯⠃⣿⣿⣽⡏⣰⣿⣿⣿⣿⡿⢋⣴⡿⠛⠁⣠⣤⠤⠶⠾⠶⣶⣦⣄⠈⠈⣿⣯⣿⣾⡇⢸⣿⣟⣧⠘⣁⠀⠀⠀⠙⣿⣆⠀⠄⠀⠀⠄⠀⢡⠀⠀⠴⠀⠠⠘⡐⡆⠘⠄⡀⠀⠄⠐",
+    "⡞⣿⡎⢿⣾⣻⣽⣷⡿⣽⣾⣯⣿⣻⡼⠃⣿⣟⡾⢠⣿⣿⣿⣿⠟⣱⡿⠋⠀⣠⡾⠋⠀⠀⢀⠀⠀⠀⠉⠻⣷⣄⠸⣿⡷⣿⣇⢸⣿⡿⣿⡄⢯⢄⣀⠀⠀⠈⢻⣦⠀⠀⠁⠀⠀⠀⢂⠀⠂⠀⠀⠄⡑⡀⠀⠁⠒⠀⠊⢐",
+    "⣷⡘⣿⡜⣿⣻⣽⣾⢿⣟⣷⣿⣳⡿⣍⢣⣿⡿⢀⣿⣿⣿⣿⣿⣾⡟⠱⠀⣴⡽⠁⠀⠀⠆⣐⣬⣐⠀⠀⠀⠙⣿⡆⢻⣟⣿⡇⢸⣿⣿⢿⡇⠈⠀⣿⣿⡄⠀⠀⠙⣷⡀⠈⠀⠀⠀⠈⢀⣀⠀⠀⢠⠐⠃⠚⠀⠀⠀⠔⢈⠀⠀⠒",
+    "⠿⠇⠘⣿⡘⢿⣯⡿⣟⣯⣿⢾⡿⣽⢣⢸⣿⢁⣾⣿⣿⣿⣿⣿⣿⣧⠆⠀⣿⣿⣾⣷⣆⢈⡿⣞⣟⣷⡄⠀⠀⠘⣷⠸⣿⣯⡇⢸⣿⣯⣿⡇⢸⠀⢹⣿⣿⡀⠀⠀⠈⢻⣄⠀⠂⠈⠀⠘⢽⠀⠀⠠⢉⢦⠰⠀⡀⠄⣀⠨⠀⠀⠀",
+    "⠀⣴⣧⠘⣿⡌⢿⣟⣿⢯⣿⣟⡿⣝⠆⡿⠃⣼⣿⣿⣿⣿⣿⣿⣿⣿⣸⠈⣿⣿⣿⣿⡿⠀⠹⣯⣛⣯⡆⢸⣯⣄⠙⠀⣿⣟⡇⣾⣿⣽⡿⡇⠘⠁⠀⠻⣿⡇⠀⠀⠄⠀⠹⣆⠀⠀⠀⠀⠈⠜⠁⠀⠨⠠⢉⠔⡁⠊⠄⡘⠀⠀⠈",
+    "⠀⢻⣿⣧⡘⣧⠆⢻⣯⣿⣻⣾⢿⡱⢲⢃⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡄⣿⣿⣷⡀⠀⠀⣶⣌⡙⠓⢂⣼⣿⠟⣀⡅⢻⣿⠀⣿⣽⣾⣿⠃⠀⣀⣀⣰⣿⡇⢰⠀⠀⠀⡀⠈⢧⡀⠀⠀⠀⠀⠀⠀⠀⠁⢂⠐⠠⢁⠂⠄⠐⠀⠀",
+    "⡩⠀⢿⣿⣷⡈⢟⡄⢹⡿⣽⣛⣮⠃⢡⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣄⠸⣿⣿⣿⣿⣿⡿⢋⣼⣿⡇⢸⡇⢰⣿⣯⣷⣿⠀⠀⢿⣿⣿⣿⠆⠈⢱⠀⠀⢀⠀⠈⠳⡀⠀⠀⠃⠀⠐⠱⠚⠲⠞⠳⠦⠈⠀⠀⠀⠤",
+    "⡱⢁⠘⣿⣿⣿⡄⠙⠄⡉⢻⡿⣅⠀⢺⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣟⠻⢿⣷⣌⠻⠿⠟⣫⣴⣿⣿⣿⡇⢸⠃⠈⣿⣽⣷⡇⠀⠀⢸⣿⡾⠟⠀⠀⠈⢆⠀⠀⠀⠄⠀⠱⡄⠀⠠⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⣱⠩⡀⠸⣿⡍⠀⣀⠀⠀⠈⢻⠖⠀⠀⠘⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣶⣶⣾⣿⣿⣿⣿⣿⣿⠇⡛⡰⢈⣿⣻⣾⠁⠀⠀⠉⠁⠀⠀⠀⠀⠀⠈⠆⠀⠀⠀⠀⠀⠘⢆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⣇⠣⠜⡀⢠⡅⠀⣿⣷⡄⢀⢀⢇⣦⠀⠀⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠂⢁⡏⢸⣟⡞⡟⠀⠀⠀⠀⠀⠀⢀⣀⣤⣶⣾⣿⣿⣿⣶⣤⡀⠀⠈⢦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠸⣹⡐⠡⠀⢠⠀⣿⣿⠿⠆⠀⢞⡦⢯⠐⣦⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⣸⡇⣸⢯⡿⠁⠀⠀⠀⢀⣠⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⠀⠀⢣⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠀⠑⢌⣃⠂⠀⠣⣹⣿⣦⠀⠀⣦⡈⠃⠀⡁⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣇⣰⣿⠃⣼⢯⠓⠀⠀⠀⠀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀⠡⠀⠀⠀⠠⡄⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⢍⡀⠀⠙⢟⣿⣷⣄⠻⣿⡿⠃⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡏⠀⣯⡜⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⠀⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⠀⠀⠄⠀⠀⠡⣤⣬⣥⣤⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⠠⢘⠶⠁⠀⠀⠀⠀⠀⢹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠋⡠⠁⠬⠁⠀⠀⠀⠀⠀⠀⠸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠀⠀⠀⠀⠀⠀⠁⢂⠐⡀⠄",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠁⡴⠋⠀⠁⠀⠀⠀⠀⡇⠀⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠆",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡁⠉⢙⣿⣿⣿⣿⣿⣿⣿⣿⠟⠠⠮⠁⠀⠀⠀⠀⠀⠀⠀⣾⣷⠀⠀⠘⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⢂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣶⣯⣿⣿⣿⣿⣿⣿⠟⠀⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⣿⡇⠀⠀⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠏⣠⣾⠀⢂⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠀⢂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠛⠿⠿⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⣿⣿⣿⣿⠀⠀⠀⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠋⣰⣿⣿⠄⠡⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
+    "⠀⠀⠐⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠲⠖⠢⠀⢌⡉⠙⠛⠛⠛⠛⠛⣁⠤⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⢀⣼⣿⣿⣿⣿⣿⣇⠀⠀⠸⣿⣿⣿⣿⣿⣿⣿⡿⠁⢸⡿⣿⣿⠀⠈⠡⠀⠀⠰⢄⠢⠀⠀⠀⠀⠀",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⢸⡏⢹⣷⠀⢀⠀⠀⢎⣱⢹⡸⢈⡹⡎⣀⠀⠀⢀⠀⠀⠀⠀⢀⣿⡿⣿⣏⣿⣹⣏⣿⠀⠀⠀⢿⣷⣿⣹⣿⣹⡿⠁⣶⠈⢸⢷⡏⢀⠀⠁⠀⠀⢾⣆⢉⡆",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠀⠀⠀⠸⣤⡑⢨⢇⠲⡩⢆⡣⢄⡀⢂⡀⣠⣼⢿⡷⡿⣯⣟⣷⣻⢯⡿⡇⠀⠀⠸⣧⢿⣽⣾⠏⢁⣾⣻⠀⢈⠻⠀⣞⣧⢦⡄⢸⠢⠁⠀⠈",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⢀⠡⢈⠡⠒⠀⠀⠐⢻⠳⢮⡶⣜⢦⣣⡤⣤⣤⠟⣗⣏⡾⣵⣻⣞⣞⣳⢯⣟⢳⣇⠀⠄⠀⢷⣋⣷⣋⢤⡟⣾⢝⠂⠠⠀⢘⡳⣬⠞⣅⠘⠂",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⠁⠂⠄⢃⠢⢑⢂⡀⠀⠈⣟⡱⣚⢬⠗⣣⠝⣦⢫⠞⡭⣞⡱⢧⡳⣍⢾⡱⣞⢎⣧⢳⠀⠀⠀⢈⠵⣣⢟⢮⢽⡸⠋⠀⢰⣙⠀⢹⣊⠽⣜⠲⡄",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⢁⠘⡨⠄⡊⠔⡂⡔⠀⠀⢎⠱⣘⠪⡹⢡⠛⠴⠋⡞⣱⢣⡝⢬⡓⡭⢎⡵⣌⢏⠶⣩⠇⢈⢠⠈⡞⡵⢎⡳⢎⡑⠁⠀⡸⣜⠀⢠⠓⠞⡬⡱⡈",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⢂⠡⢂⠥⡉⢔⡈⠆⢀⠀⠈⠄⠣⢡⢃⠹⡈⠣⠜⢂⢣⠚⡥⡱⡙⡜⢦⡙⢎⡱⢃⠆⠈⠀⠀⡜⡱⢎⡕⠊⢀⠌⠀⠰⡘⡄⠀⢐⠎⢥⠓⡡⠂",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⠰⢁⠂⠀⠀⠀⠀⠠⢀⠀⠁⠂⠜⢠⢃⡌⠀⢂⠄⠀⠀⠀⠊⠐⠨⠁⡜⠈⠢⢁⠢⠡⢱⠘⠤⣉⠦⠱⣉⠆⠀⠀⠀⡸⢑⢎⠈⠠⠌⠀⠀⢒⠱⡘⠄⠈⡜⢢⠉⠔⠁",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⠀⠀⠀⠀⠀⠐⠀⡀⢂⠐⠠⡀⠄⡀⠈⠂⠈⠘⡄⢣⢁⡀⠠⠐⠂⠀⠀⠁⠂⠀⠃⠂⠁⠂⠐⠄⠃⠐⠂⠀⠀⠀⠡⠋⠀⠌⠂⠀⠀⡈⠆⢂⠱⠀⡈⠔⢂⠉⡄",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⠀⠈⠄⠐⠈⠄⡁⢂⠐⢀⠈⠐⠤⢈⠱⠀⡔⠠⡀⠄⡀⣀⠂⠡⠌⢂⠡⠒⠰⡀⠄⡀⢀⠠⢀⢂⠉⠀⠀⢀⠂⡘⠠⡁⠀⡐⠈⠔⡈⠰",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠄⠂⠁⠠⠈⠐⠠⠀⠄⡀⠂⡀⠄⡀⢀⠀⠁⠐⠁⠐⠈⠐⡀⠌⠡⠘⠠⢁⠊⠡⠐⡡⠈⠄⢂⠁⠂⠀⠀⠀⠂⠐⠁⠂⠀⠐⢀⠁⠂⠐",
+    "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠂⠀⠀⠀⠀⠀⠀⠀⠀⠈⠀⠀⡈⢀⠡⠀⠀⢁⠀⠂⠐⠀⠂⠁⢀⠂⠐⢤⠄⡀⠈⠠⠁⠂⠄⡈⠄⠁⡀⠁⠀⠂⠀⠀⠀⠀⠀⠄⠀⠀⡀⠐⠈⠀⠠⠈"
+]
+
+
+def matrix_glitch_text(text, delay=0.03, glitch_count=3):
+    """Erzeugt einen coolen Cyberpunk/Matrix-Einblendeffekt für Text."""
+    chars = "X@#$&%*+=-_~"
+    for i in range(len(text) + 1):
+        visible = text[:i]
+        if i < len(text):
+            for _ in range(glitch_count):
+                glitch_char = random.choice(chars)
+                sys.stdout.write(f"\r{visible}{glitch_char}")
+                sys.stdout.flush()
+                time.sleep(delay / glitch_count)
+        else:
+            sys.stdout.write(f"\r{visible}")
+    print()
+
+
+def animate_pyramid(lines, delay=0.02):
+    """Baut die Pyramide flüssig und sauber Zeile für Zeile auf."""
+    print("\n")
+    for line in lines:
+        print(line)
+        time.sleep(delay)
+    print("\n")
 
 
 def check_and_install_dependencies():
-    """Überprüft die Verfügbarkeit der Bibliotheken und installiert fehlende Pakete."""
-    print("[INFO] Überprüfe Projekt-Abhängigkeiten...")
+    """Prüft Abhängigkeiten mit einer klassischen Retro-Spinner-Animation."""
+    matrix_glitch_text("[SYSTEM] Initialisiere Core-Validierung...", delay=0.02)
     missing_packages = []
+    
+    spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     
     for package in REQUIRED_PACKAGES:
         import_name = IMPORT_MAPPING.get(package, package)
         
-        # Prüfen, ob das Modul im aktuellen Environment auffindbar ist
+        # Coole Spinner-Animation pro Paket
+        for r in range(6):
+            sys.stdout.write(f"\r  {spinner[r % len(spinner)]} Analysiere Environment-Struktur... [{package}]")
+            sys.stdout.flush()
+            time.sleep(0.04)
+            
         if importlib.util.find_spec(import_name) is None:
             missing_packages.append(package)
+            
+    # Zeile sauber löschen und Erfolg melden
+    sys.stdout.write("\r[ERFOLG] Environment-Struktur erfolgreich gescannt.\n\n")
+    sys.stdout.flush()
 
     if missing_packages:
-        print(f"[INFO] Folgende Pakete fehlen und werden installiert: {missing_packages}")
+        matrix_glitch_text(f"[WARN] Fehlende Module entdeckt: {missing_packages}", delay=0.02)
+        matrix_glitch_text("[EXEC] Starte pip-Injektion...", delay=0.02)
         try:
-            # Nutzt den exakt laufenden Python-Interpreter, um Pfad-Konflikte zu vermeiden
             subprocess.check_call(
                 [sys.executable, "-m", "pip", "install", *missing_packages],
-                stdout=subprocess.DEVNULL  # Hält die Konsole sauber
+                stdout=subprocess.DEVNULL
             )
-            print("[ERFOLG] Alle Pakete erfolgreich installiert!")
+            matrix_glitch_text("[OK] Alle Module erfolgreich kompiliert und injiziert.", delay=0.02)
         except subprocess.CalledProcessError as e:
-            print(f"[FEHLER] Installation der Pakete fehlgeschlagen: {e}")
+            debug_error("Kritischer Fehler bei der Installation der Abhängigkeiten.", e)
             sys.exit(1)
     else:
-        print("[ERFOLG] Alle benötigten Bibliotheken sind bereits installiert.")
+        debug_info("Alle Core-Abhängigkeiten sind bereits aktiv.")
+
+
+def run_countdown(seconds=3):
+    """Führt einen animierten, coolen Countdown vor dem App-Start aus."""
+    print()
+    matrix_glitch_text("[SYSTEM] Alle Checks bestanden. Bereite System-Start vor...", delay=0.02)
+    
+    # Optische Lade-Blöcke passend zum Countdown
+    blocks = ["███", "██", "█"]
+    
+    for i in range(seconds, 0, -1):
+        sys.stdout.write(f"\r  >> Starte Server in {i} Sekunden... {blocks[i-1]:<3}")
+        sys.stdout.flush()
+        time.sleep(1)
+        
+    sys.stdout.write("\r  >> INITIALISIERE STREAMLIT FRAMEWORK... (100%)\n")
+    sys.stdout.flush()
+    time.sleep(0.4)
 
 
 def start_streamlit_app():
-    """Ermittelt die app.py im Skriptverzeichnis und startet das Dashboard."""
-    # Bestimme den absoluten Pfad des Skript-Ordners für maximale Aufrufsicherheit
+    """Ermittelt den Pfad zur app.py und startet das Dashboard."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     target_app = os.path.join(script_dir, "app.py")
     
     if not os.path.exists(target_app):
-        print(f"[FEHLER] Die Hauptdatei '{target_app}' wurde nicht gefunden!")
-        print("[INFO] Bitte stelle sicher, dass app.py im selben Ordner wie dieses Skript liegt.")
+        debug_error(f"Kern-Instanz '{target_app}' fehlt!")
         sys.exit(1)
         
     python_version = sys.version.split()[0]
-    print(f"[INFO] Starte Streamlit-Dashboard unter Python {python_version}...")
     
-    # Startet Streamlit prozesssicher als Python-Modul
+    # 3-Sekunden Cooldown/Countdown abfeuern
+    run_countdown(seconds=3)
+    print("-" * 110)
+    
     try:
         subprocess.run([sys.executable, "-m", "streamlit", "run", target_app], check=True)
     except KeyboardInterrupt:
-        print("\n[STOPP] Dashboard wurde vom Nutzer beendet. Anwendung geschlossen.")
+        debug_info("System vom Benutzer kontrolliert heruntergefahren.")
     except subprocess.CalledProcessError as e:
-        print(f"\n[FEHLER] Streamlit wurde unerwartet beendet. Fehlercode: {e.returncode}")
+        debug_error("Streamlit-Instanz wurde unerwartet beendet.", e)
 
 
 if __name__ == "__main__":
-    print("=== KI-Pyramiden-Projekt Starter-Zentrale 2026 ===")
+    # OS-Terminal säubern für maximalen Effekt
+    os.system('cls' if os.name == 'nt' else 'clear')
     
-    # 1. System-Umgebung validieren und absichern
+    # 1. Animierter Aufbau der originalen Pyramide
+    animate_pyramid(PYRAMID_LINES, delay=0.02)
+    
+    # 2. Tech-Rahmen einblenden (Länge angepasst an Grafik)
+    print("┌" + "─" * 108 + "┐")
+    matrix_glitch_text("│                               >>>  K I - P Y R A M I D E N - P R O J E K T  2 0 2 6  <<<                             │", delay=0.01)
+    print("└" + "─" * 108 + "┘")
+    print()
+    
+    # 3. Validierung, Cooldown & Start
     check_and_install_dependencies()
-    print("-" * 50)
+    print("\n" + "=" * 110)
     
-    # 2. Dashboard-Prozess initialisieren
     start_streamlit_app()
