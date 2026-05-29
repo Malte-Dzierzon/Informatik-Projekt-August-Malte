@@ -1,6 +1,6 @@
 """
-AUTOMATISCHES SETUP & START-SKRIPT
-==================================
+AUTOMATISCHES SETUP & START-SKRIPT (Cross-Platform: Windows & Linux)
+====================================================================
 Überprüft die Abhängigkeiten und startet das Pyramiden-Dashboard
 ordnungsgemäß im nativen Streamlit-Laufzeitmodus.
 """
@@ -98,7 +98,7 @@ def animate_pyramid(lines, delay=0.02):
 
 
 def check_and_install_dependencies():
-    """Prüft Abhängigkeiten mit einer klassischen Retro-Spinner-Animation."""
+    """Prüft Abhängigkeiten mit einer klassischen Retro-Spinner-Animation (Robust & OS-Safe)."""
     matrix_glitch_text("[SYSTEM] Initialisiere Core-Validierung...", delay=0.02)
     missing_packages = []
     
@@ -124,28 +124,45 @@ def check_and_install_dependencies():
         matrix_glitch_text(f"[WARN] Fehlende Module entdeckt: {missing_packages}", delay=0.02)
         matrix_glitch_text("[EXEC] Starte pip-Injektion...", delay=0.02)
         try:
+            # Linux Fix: Fallback-Optionen falls system-wide Paketmanager blockieren (--break-system-packages)
+            cmd = [sys.executable, "-m", "pip", "install", *missing_packages]
+            
+            # Prüfen ob wir auf Linux sind, um ggf. restriktive Pip-Environments zu umgehen
+            if os.name != 'nt':
+                # Versucht die Standard-Installation, ignoriert PEP 668 Blockaden falls nötig
+                cmd.append("--break-system-packages")
+                
             subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", *missing_packages],
-                stdout=subprocess.DEVNULL
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
             )
             matrix_glitch_text("[OK] Alle Module erfolgreich kompiliert und injiziert.", delay=0.02)
-        except subprocess.CalledProcessError as e:
-            debug_error("Kritischer Fehler bei der Installation der Abhängigkeiten.", e)
-            sys.exit(1)
+        except subprocess.CalledProcessError:
+            # Falls --break-system-packages auf alten Pip-Versionen fehlschlägt, normaler Retry
+            try:
+                cmd = [sys.executable, "-m", "pip", "install", *missing_packages]
+                subprocess.check_call(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                matrix_glitch_text("[OK] Alle Module erfolgreich kompiliert.", delay=0.02)
+            except subprocess.CalledProcessError as e:
+                debug_error("Kritischer Fehler bei der Installation der Abhängigkeiten.", e)
+                sys.exit(1)
     else:
         debug_info("Alle Core-Abhängigkeiten sind bereits aktiv.")
 
 
 def run_countdown(seconds=3):
-    """Führt einen animierten, coolen Countdown vor dem App-Start aus."""
+    """Führt einen animierten, coolen Countdown vor dem App-Start aus (Überlauf-sicher)."""
     print()
     matrix_glitch_text("[SYSTEM] Alle Checks bestanden. Bereite System-Start vor...", delay=0.02)
     
-    # Optische Lade-Blöcke passend zum Countdown
+    # Optische Lade-Blöcke
     blocks = ["███", "██", "█"]
     
     for i in range(seconds, 0, -1):
-        sys.stdout.write(f"\r  >> Starte Server in {i} Sekunden... {blocks[i-1]:<3}")
+        # Absicherung falls seconds > 3 übergeben wird (IndexError-Schutz)
+        block_visual = blocks[(i - 1) % len(blocks)]
+        sys.stdout.write(f"\r  >> Starte Server in {i} Sekunden... {block_visual:<3}")
         sys.stdout.flush()
         time.sleep(1)
         
@@ -163,30 +180,31 @@ def start_streamlit_app():
         debug_error(f"Kern-Instanz '{target_app}' fehlt!")
         sys.exit(1)
         
-    python_version = sys.version.split()[0]
-    
     # 3-Sekunden Cooldown/Countdown abfeuern
     run_countdown(seconds=3)
     print("-" * 110)
     
     try:
+        # Führt Streamlit nativ aus und reicht KeyboardInterrupts sauber durch
         subprocess.run([sys.executable, "-m", "streamlit", "run", target_app], check=True)
     except KeyboardInterrupt:
+        print()
         debug_info("System vom Benutzer kontrolliert heruntergefahren.")
     except subprocess.CalledProcessError as e:
         debug_error("Streamlit-Instanz wurde unerwartet beendet.", e)
 
 
 if __name__ == "__main__":
-    # OS-Terminal säubern für maximalen Effekt
-    os.system('cls' if os.name == 'nt' else 'clear')
+    # OS-Terminal säubern (Native Variante ohne Subprozess-Flackern auf Linux)
+    sys.stdout.write("\033[H\033[2J")
+    sys.stdout.flush()
     
     # 1. Animierter Aufbau der originalen Pyramide
     animate_pyramid(PYRAMID_LINES, delay=0.02)
     
     # 2. Tech-Rahmen einblenden (Länge angepasst an Grafik)
     print("┌" + "─" * 108 + "┐")
-    matrix_glitch_text("│                               >>>  K I - P Y R A M I D E N - P R O J E K T  2 0 2 6  <<<                             │", delay=0.01)
+    matrix_glitch_text("│                   >>>  K I - P Y R A M I D E N - P R O J E K T  2 0 2 6  <<<                    │", delay=0.01)
     print("└" + "─" * 108 + "┘")
     print()
     
