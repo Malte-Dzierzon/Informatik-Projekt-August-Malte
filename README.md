@@ -19,7 +19,7 @@
 
 Ein minimales neuronales Netz, das 3D-Objekte anhand ihrer Eckpunkte als Pyramiden oder Rauschen klassifiziert — optimiert für Low-End-Hardware, keine GPU erforderlich.
 
----
+
 
 ## Documentation
 
@@ -35,7 +35,7 @@ Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe
 - Speichert und setzt Training sessionübergreifend fort — via JSON-Checkpoint-System
 - Enthält ein interaktives Streamlit-Dashboard und einen 3D-Plotly-Visualizer
 
----
+
 
 ## Stack
 
