@@ -266,8 +266,20 @@ def update_input_handler_from_data(data: np.ndarray) -> None:
 
     feature_count = data.shape[1] - 1
     coords_per_vertex = STATE["input_handler"].coordinates_per_vertex
-    estimated_vertices = max(5, int(np.ceil(feature_count / coords_per_vertex)))
+    extra_features = 4
+    coord_feature_count = max(feature_count - extra_features, 0)
+    estimated_vertices = max(5, int(np.ceil(coord_feature_count / coords_per_vertex)))
     STATE["input_handler"].max_vertices = estimated_vertices
+
+
+def invalidate_model_state() -> None:
+    """Entfernt ein ungültiges Modell, wenn sich die Datensatzstruktur geändert hat."""
+    if STATE["model"] is not None:
+        STATE["model"] = None
+        STATE["train_losses"] = []
+        STATE["test_losses"] = []
+        STATE["last_validation_result"] = None
+        STATE["total_training_count"] = 0
 
 
 def load_data() -> None:
@@ -308,6 +320,7 @@ def generate_synthetic_dataset() -> None:
 
     STATE["data"] = data_matrix.astype(np.float32)
     update_input_handler_from_data(STATE["data"])
+    invalidate_model_state()
     STATE["current_test_vector"] = None
     STATE["current_soll"] = None
     debug_generate("Synthetischen Datensatz erzeugt.")
@@ -352,6 +365,7 @@ def import_csv_dataset() -> None:
 
         STATE["data"] = data
         update_input_handler_from_data(STATE["data"])
+        invalidate_model_state()
         STATE["current_test_vector"] = None
         STATE["current_soll"] = None
         debug_info("CSV-Datensatz geladen.")
@@ -564,7 +578,12 @@ def interactive_test() -> None:
     print("  1) Zufälliges Objekt generieren")
     print("  2) Manuelle Koordinaten eingeben")
     print("  3) Zurück zum Menü")
-    choice = ask_menu_choice()
+    while True:
+        choice = input("Auswahl [1-3]: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= 3:
+            choice = int(choice)
+            break
+        print("Ungültige Eingabe. Bitte eine Zahl zwischen 1 und 3 eingeben.")
 
     if choice == 1:
         print("  1) Pyramide")
