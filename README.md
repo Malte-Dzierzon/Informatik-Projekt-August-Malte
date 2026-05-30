@@ -35,7 +35,7 @@ Ein minimales neuronales Netz, das 3D-Objekte anhand ihrer Eckpunkte als Pyramid
 ## Documentation
 
 Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe:
-**[Kanva Docs](https://your-kanva-link-here)**
+**[Canva Docs](https://canva.link/xir0wtc74df416s)**
 
 ---
 
