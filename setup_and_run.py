@@ -212,4 +212,4 @@ if __name__ == "__main__":
     check_and_install_dependencies()
     print("\n" + "=" * 110)
     
-    start_streamlit_app()
+    start_streamlit_app()   

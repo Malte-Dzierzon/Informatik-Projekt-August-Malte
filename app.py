@@ -601,12 +601,12 @@ with tab_test:
 
                 with c_btn1:
                     is_p = st.session_state.ui_object_type == "perfect"
-                    if st.button("📐 Echte Pyramide (Soll=1)", type="primary" if is_p else "secondary", width="stretch"):
+                    if st.button("Echte Pyramide (Soll=1)", type="primary" if is_p else "secondary", width="stretch"):
                         st.session_state.ui_object_type = "perfect"
                         st.rerun()
                 with c_btn2:
                     is_a = st.session_state.ui_object_type == "alternative"
-                    if st.button("☲ Rauschen / Andere (Soll=0)", type="primary" if is_a else "secondary", width="stretch"):
+                    if st.button("Rauschen / Andere (Soll=0)", type="primary" if is_a else "secondary", width="stretch"):
                         st.session_state.ui_object_type = "alternative"
                         st.rerun()
 
