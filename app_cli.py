@@ -145,6 +145,10 @@ def prompt_float(prompt: str, default: float) -> float:
         print("Bitte eine gültige positive Zahl eingeben.")
 
 
+def pause() -> None:
+    input("\nDrücke ENTER, um zum Menü zurückzukehren...")
+
+
 def expit(z: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(z, -500.0, 500.0)))
 
