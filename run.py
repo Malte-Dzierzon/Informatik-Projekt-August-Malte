@@ -206,9 +206,9 @@ if __name__ == "__main__":
         return bool(android_data and termux_flag)
 
     def start_cli_app():
-        """Startet die Terminal-Alternative `app_cli.py` für Android/Termux."""
+        """Startet die Terminal-Alternative `app_android.py` für Android/Termux."""
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        cli_app = os.path.join(script_dir, "app_cli.py")
+        cli_app = os.path.join(script_dir, "app_android.py")
 
         if not os.path.exists(cli_app):
             debug_error(f"Kern-Instanz '{cli_app}' fehlt!")
@@ -219,8 +219,8 @@ if __name__ == "__main__":
             sys.path.insert(0, script_dir)
 
         try:
-            import app_cli
-            app_cli.main()
+            import app_android
+            app_android.main()
         except KeyboardInterrupt:
             print()
             debug_info("CLI-Anwendung vom Benutzer beendet.")
