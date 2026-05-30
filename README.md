@@ -15,8 +15,9 @@
 ## Quickstart
 
 ```bash
-git clone https://github.com/Malte-Dzierzon/Informatik-Projekt-August-Malte.git
-python run.py
+1. git clone https://github.com/Malte-Dzierzon/Informatik-Projekt-August-Malte.git
+
+2. python run.py
 ```
 
 ---
