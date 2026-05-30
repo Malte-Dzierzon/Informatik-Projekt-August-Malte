@@ -355,7 +355,7 @@ if __name__ == "__main__":
 
         # 2. Tech-Rahmen einblenden (Länge angepasst an Grafik)
         print("┌" + "─" * 108 + "┐")
-        matrix_glitch_text("│                 >>>  K I - P Y R A M I D E N - P R O J E K T  2 0 2 6  <<<                   │", delay=0.01)
+        matrix_glitch_text("│                 >>>  INFORMATIK PROJEKT AI&PYRAMIDEN  <<<                   │", delay=0.01)
         print("└" + "─" * 108 + "┘")
         print()
 
