@@ -1,4 +1,4 @@
-
+```
 +--------------------------------------------------+
 |                                                  |
 |   PYRAMIDEN  KLASSIFIKATION    v2.0              |
@@ -6,7 +6,7 @@
 |   Binäre 3D-Objektklassifikation                 |
 |                                                  |
 +--------------------------------------------------+
-
+```
 
 ---
 
@@ -18,7 +18,6 @@
 2. python run.py
 ```
 
----
 
 Ein minimales neuronales Netz, das 3D-Objekte anhand ihrer Eckpunkte als Pyramiden oder Rauschen klassifiziert — optimiert für Low-End-Hardware, keine GPU erforderlich.
 
@@ -44,7 +43,6 @@ Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe
 
 `numpy` &nbsp; `scipy` &nbsp; `streamlit` &nbsp; `plotly` &nbsp; `pandas`
 
----
 
 ```
 ⠀⠀⠀⠀⢠⡶⠚⢷⣤⡀⠀⠀⠀⠀⠀⣲⡶⠛⠻⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
