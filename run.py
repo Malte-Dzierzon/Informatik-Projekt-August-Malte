@@ -1,5 +1,5 @@
 """
-AUTOMATISCHES SETUP & START-SKRIPT (Cross-Platform: Windows & Linux)
+AUTOMATISCHES SETUP & START-SKRIPT
 ====================================================================
 Überprüft die Abhängigkeiten und startet das Pyramiden-Dashboard
 ordnungsgemäß im nativen Streamlit-Laufzeitmodus.

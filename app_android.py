@@ -259,6 +259,17 @@ def show_dataset_preview(data: np.ndarray) -> None:
     print_line("─")
 
 
+def update_input_handler_from_data(data: np.ndarray) -> None:
+    """Passt den Input-Handler an die Breite des geladenen oder generierten Datensatzes an."""
+    if data is None or data.ndim != 2 or data.shape[1] < 2:
+        return
+
+    feature_count = data.shape[1] - 1
+    coords_per_vertex = STATE["input_handler"].coordinates_per_vertex
+    estimated_vertices = max(5, int(np.ceil(feature_count / coords_per_vertex)))
+    STATE["input_handler"].max_vertices = estimated_vertices
+
+
 def load_data() -> None:
     render_header()
     boxed(["Daten laden / generieren"], width=WIDTH)
