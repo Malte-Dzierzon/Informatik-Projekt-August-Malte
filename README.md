@@ -1,14 +1,12 @@
 ```
 +--------------------------------------------------+
 |                                                  |
-|   PYRAMIDEN  KLASSIFIKATION    v2.0              |
+|   PYRAMIDEN  ERKENNUNG    v2.0              |
 |   ──────────────────────────────────────────     |
 |   Binäre 3D-Objektklassifikation                 |
 |                                                  |
 +--------------------------------------------------+
 ```
-
----
 
 ## Quickstart
 
@@ -28,7 +26,7 @@ Ein minimales neuronales Netz, das 3D-Objekte anhand ihrer Eckpunkte als Pyramid
 Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe:
 **[Canva Docs](https://canva.link/xir0wtc74df416s)**
 
----
+
 
 ## Was es macht
 

@@ -2,6 +2,7 @@
 Android Version von app.py, optimiert für Termux auf mobilen Geräten.
 Bietet eine einfache Textoberfläche zur Datenverwaltung, Modelltraining und interaktiven Tests. 
 Alle Funktionen sind in einem einzigen Skript gebündelt, um die Bedienung zu erleichtern.
+
 '''
 
 import csv
@@ -35,7 +36,7 @@ APP_HEADER = [
     "⠈⠉⠉⠁⠀⠀⠉⠉⠀⠀⠈⠉⠉⠀⠀⠀⠈⠉⠉⠉⠉⠉⠉⠉⠁⠀⠀⠁⠀⠀⠀⠈⠙⠻⠿⣿⣿⣿⠿⠿⠋⠁⠀⠀⠀⠈⠀⠀⠀⠈⠉⠉⠁⠀⠀⠉⠉⠉⠀⠀⠀",
 ]
 
-SUBTITLE = "Pyramiden-KI für Termux - Übersicht & Training"
+SUBTITLE = "Pyramiden Erkennung - Übersicht & Training"
 
 MENU_CHOICES = [
     "Daten laden / generieren",

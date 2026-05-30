@@ -2,8 +2,9 @@
 DYNAMISCHES INPUT-SYSTEM - Rotationsinvariant & Minimalist
 ===========================================================
 Verarbeitet Geometriedaten mit variabler Vertex-Anzahl und transformiert
-X,Y,Z-Koordinaten in rotationsinvariante Punktabstände (Distanzen),
-damit gekippte oder gedrehte Objekte fehlerfrei erkannt werden.
+X,Y,Z-Koordinaten in rotationsinvariante Punktabstände (Distanzen).
+Damit man objekte mit 4 Verteces haben kann, aber auchgleichzeitig welche mit 46, 
+ohne dass die KI durcheinander kommt.
 """
 
 import numpy as np
