@@ -219,11 +219,11 @@ tab_data, tab_training, tab_test = st.tabs([
 with tab_data:
     st.markdown("<h2 style='font-size: 1.5rem;'>Trainingsdaten-Management</h2>", unsafe_allow_html=True)
 
-    st.markdown("### Dynamische Geometrie-Struktur festlegen")
+    st.markdown("###### Maximale Eckpunktanzahl festlegen")
     st.markdown(
-        "> **Struktureller Hinweis:** Falls Objekte die vordefinierte maximale Anzahl an Eckpunkten unterschreiten, "
-        "greift eine automatische Padding-Logik mit `NaN` (Not a Number), um leere Punkte mathematisch präzise "
-        "von echten Punkten im Koordinatenursprung (0,0,0) zu trennen."
+        "> **Hinweis zur Datenstruktur:** Alle Objekte werden auf dieselbe Länge gebracht. "
+        "Hat ein Objekt weniger Eckpunkte als das Maximum, werden die fehlenden Stellen automatisch "
+        "mit `NaN` gefüllt – damit bleibt der Unterschied zu echten Punkten am Ursprung (0, 0, 0) erhalten."
     )
 
     c_geo1, _ = st.columns(2)
@@ -249,12 +249,12 @@ with tab_data:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.markdown("**Variante A: Synthetische Datenstruktur generieren**")
-        n_pyramids     = st.number_input("Anzahl der Pyramidenproben",   min_value=10, value=100, step=10)
-        n_non_pyramids = st.number_input("Anzahl der Alternativproben",  min_value=10, value=100, step=10)
+        st.markdown("**Variante A: Synthetischen Datensatz generieren**")
+        n_pyramids     = st.number_input("Anzahl Pyramiden",     min_value=10, value=100, step=10)
+        n_non_pyramids = st.number_input("Anzahl andere Formen", min_value=10, value=100, step=10)
 
-        if st.button("Synthetischen Datensatz erzeugen", width="stretch", key="gen_btn"):
-            with st.spinner("Berechne Geometrie-Matrizen..."):
+        if st.button("Datensatz erstellen", width="stretch", key="gen_btn"):
+            with st.spinner("Geometrie-Matrizen werden berechnet..."):
                 data_matrix, _ = st.session_state.pyramid_generator.generate_dataset(
                     max_vertices=max_vertices,
                     coords_per_vertex=coords_per_vertex,
@@ -264,16 +264,15 @@ with tab_data:
                 )
                 st.session_state.data = data_matrix.astype(np.float32)
                 debug_generate("Synthetischen Trainingsdatensatz erzeugt.")
-                st.success("Datensatz erfolgreich im Speicher verankert.")
+                st.success("Datensatz erfolgreich geladen.")
                 st.rerun()
 
     with col2:
-        st.markdown("**Variante B: Lokalen CSV-Datensatz importieren**")
+        st.markdown("**Variante B: CSV-Datei importieren**")
         uploaded = st.file_uploader("CSV-Datei auswählen", type="csv")
         if uploaded:
             try:
                 df_upload = pd.read_csv(uploaded, low_memory=False)
-                # Prüfen ob Header aus reinen Zahlen besteht → dann ohne Header neu laden
                 is_pure_data = all(
                     str(col).replace(".", "", 1).isdigit() or "Unnamed" in str(col)
                     for col in df_upload.columns
@@ -285,8 +284,6 @@ with tab_data:
                 uploaded_matrix = df_upload.to_numpy(dtype=np.float32)
                 st.session_state.data = uploaded_matrix
                 
-                # ABSICHERUNG: Berechne max_vertices dynamisch aus der importierten CSV-Struktur
-                # (Anzahl Spalten - 1 für Label - 4 für Zusatzfeatures) // 3 Koordinaten
                 anzahl_zusatz_features = 4
                 calculated_features = uploaded_matrix.shape[1] - 1
                 calculated_vertices = (calculated_features - anzahl_zusatz_features) // coords_per_vertex
@@ -296,14 +293,13 @@ with tab_data:
                         max_vertices=calculated_vertices,
                         coordinates_per_vertex=coords_per_vertex,
                     )
-                    # UI-Zustand überschreiben, damit UI und Daten synchron sind
                     st.session_state.ui_max_vertices = calculated_vertices
                 
-                st.success(f"CSV-Geometriedaten erfolgreich ausgelesen ({calculated_vertices} Vertices erkannt).")
+                st.success(f"CSV erfolgreich importiert ({calculated_vertices} Eckpunkte erkannt).")
                 st.rerun()
             except Exception as e:
                 debug_error("CSV-Import fehlgeschlagen.", e)
-                st.error(f"Fehler bei der CSV-Parsing-Routine: {e}")
+                st.error(f"Fehler beim Einlesen der CSV-Datei: {e}")
 
     if "data" in st.session_state:
         st.markdown("---")
@@ -311,19 +307,17 @@ with tab_data:
         pyr_rows   = data[data[:, -1] == 1.0]
         other_rows = data[data[:, -1] == 0.0]
 
-        # Dynamisch ermitteln, wie viele Vertices die *aktuell geladenen* Daten haben
         current_num_features = data.shape[1] - 1
         anzahl_zusatz_features = 4
         current_vertices = (current_num_features - anzahl_zusatz_features) // coords_per_vertex
 
         c1, c2, c3 = st.columns(3)
-        c1.metric("Gesamte Datenzeilen",                 str(len(data)))
-        c2.metric("Erkanntes Rohdaten-Format (Spalten)", str(current_num_features))
-        c3.metric("Klassenaufteilung (Pyr / Andere)",  f"{len(pyr_rows)} / {len(other_rows)}")
+        c1.metric("Datensätze gesamt",               str(len(data)))
+        c2.metric("Anzahl Merkmale (Spalten)",        str(current_num_features))
+        c3.metric("Klassenverteilung (Pyr / Andere)", f"{len(pyr_rows)} / {len(other_rows)}")
 
-        st.markdown("### Daten-Vorschau (Rohdaten vor Normalisierung)")
+        st.markdown("### Datenvorschau (vor Normalisierung)")
 
-        # Spaltennamen präzise anhand der tatsächlichen Daten-Struktur aufbauen
         col_names: list = []
         feat_counter = 0
         for v in range(current_vertices):
@@ -333,32 +327,30 @@ with tab_data:
                     col_names.append(f"P{v + 1}_{axis}")
                     feat_counter += 1
                     
-        # Benannte Zusatzfeatures für die Vorschau-Tabelle verwenden
-        zusatz_labels = ["Höhe (Height)", "Balance", "Grundfläche (Area)", "Zentrum_X"]
+        zusatz_labels = ["Höhe", "Balance", "Grundfläche", "Schwerpunkt X"]
         for label in zusatz_labels:
             if len(col_names) < current_num_features:
                 col_names.append(label)
                 
         while len(col_names) < current_num_features:
-            col_names.append(f"Zusatz_Feature_{len(col_names) + 1}")
+            col_names.append(f"Zusatzmerkmal_{len(col_names) + 1}")
             
-        col_names.append("Zielklasse (Label)")
+        col_names.append("Klasse (Label)")
 
         view_col1, view_col2 = st.columns(2)
         with view_col1:
-            st.markdown("**▪ Klasse 1: Echte Pyramiden (Auszug)**")
+            st.markdown("**▪ Klasse 1 – Pyramiden (Vorschau)**")
             if len(pyr_rows) > 0:
                 st.dataframe(pd.DataFrame(pyr_rows[:5], columns=col_names).style.format(precision=3, na_rep="NaN"), width="stretch")
             else:
-                st.info("Keine Pyramidendaten im aktuellen Set vorhanden.")
+                st.info("Keine Pyramiden im aktuellen Datensatz vorhanden.")
 
         with view_col2:
-            st.markdown("**▪ Klasse 0: Andere Formen / Komplexe Geometrien (Auszug)**")
+            st.markdown("**▪ Klasse 0 – Andere Formen (Vorschau)**")
             if len(other_rows) > 0:
                 st.dataframe(pd.DataFrame(other_rows[:5], columns=col_names).style.format(precision=3, na_rep="NaN"), width="stretch")
             else:
-                st.info("Keine Alternativformen im aktuellen Set vorhanden.")   
-
+                st.info("Keine anderen Formen im aktuellen Datensatz vorhanden.")
 
 # ---------------------------------------------------------------------------
 # TAB 2: MODELL-TRAINING
@@ -366,7 +358,7 @@ with tab_data:
 with tab_training:
     st.markdown("<h2 style='font-size: 1.5rem;'>Modell trainieren</h2>", unsafe_allow_html=True)
 
-    # Eingangs-Dimension ermitteln (aus Daten oder Schätzung)
+    # Eingangsgröße bestimmen (aus geladenen Daten oder Schätzung)
     if "data" in st.session_state:
         try:
             raw_features_only = st.session_state.data[:, :-1]
@@ -378,15 +370,15 @@ with tab_training:
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        input_size = st.number_input("Input-Größe (Konstante Abstandsmatrix)", value=int(detected_inputs), step=1, disabled=True)
+        input_size = st.number_input("Input Nodes ", value=int(detected_inputs), step=1, disabled=True)
     with col2:
-        hidden_size = st.number_input("Neuronen im Hidden Layer", value=32, step=1)
+        hidden_size = st.number_input("Hidden Nodes", value=32, step=1)
     with col3:
-        learning_rate = st.slider("Schrittweite (Lernrate)", 0.001, 1.0, 0.1)
+        learning_rate = st.slider("Lernrate(BIOS)", 0.001, 1.0, 0.1)
 
-    epochs = st.number_input("Wie viele Runden (Epochen)?", value=1000, step=100)
+    epochs = st.number_input("Anzahl Epochen", value=1000, step=100)
 
-    # Prüfen ob das geladene Modell dieselbe Architektur hat → Fortsetzen möglich
+    # Prüfen ob das geladene Modell zur aktuellen Architektur passt → Weitertraining möglich
     can_continue = (
         st.session_state.model is not None
         and st.session_state.model["input_size"]  == input_size
@@ -395,17 +387,17 @@ with tab_training:
 
     if can_continue:
         train_mode = st.radio(
-            "Gewichts-Initialisierung:",
-            ["Bestehendes Modell weitertrainieren (Fortsetzen)", "Gewichte komplett zurücksetzen & neu starten"],
+            "Trainingsmodus:",
+            ["Bestehendes Modell weitertrainieren", "Neu starten (Gewichte zurücksetzen)"],
             horizontal=True,
         )
     else:
-        st.info("[System] Neue Architektur-Dimensionen erkannt oder kein Modell geladen. Gewichte werden neu initialisiert.")
-        train_mode = "Gewichte komplett zurücksetzen & neu starten"
+        st.info("Neue Architektur erkannt oder kein Modell geladen – Gewichte werden neu initialisiert.")
+        train_mode = "Neu starten (Gewichte zurücksetzen)"
 
-    if st.button("Training starten & verifizieren", width="stretch"):
+    if st.button("Training starten", width="stretch"):
         if "data" not in st.session_state:
-            st.error("Operation abgebrochen: Bitte lade oder erzeuge Geometriedaten im ersten Tab.")
+            st.error("Bitte zuerst Daten laden oder erstellen (Tab: Trainingsdaten).")
         else:
             try:
                 raw_data = st.session_state.data
@@ -415,7 +407,7 @@ with tab_training:
                 y_all = data_prepared[:, -1:]
                 actual_input_size = X_all.shape[1]
 
-                # Isolierter RNG für reproduzierbare Train/Val-Aufteilung (kein globaler Seed!)
+                # Fester Zufalls-Seed für reproduzierbare Train/Val-Aufteilung
                 split_rng = np.random.default_rng(42)
                 shuffled_indices = split_rng.permutation(len(data_prepared))
                 split_idx = int(len(data_prepared) * 0.8)
@@ -425,13 +417,13 @@ with tab_training:
                 X_val   = X_all[val_idx]  if len(val_idx) > 0 else X_train
                 y_val   = y_all[val_idx]  if len(val_idx) > 0 else y_train
                 n_train = len(X_train)
-                X_train_T = X_train.T  # Einmal transponieren, nicht jede Epoche
+                X_train_T = X_train.T  # Einmal transponieren, nicht jede Epoche neu
 
-                if train_mode != "Bestehendes Modell weitertrainieren (Fortsetzen)":
+                if train_mode != "Bestehendes Modell weitertrainieren":
                     st.session_state.total_training_count = 0
 
                 # Gewichte laden oder neu initialisieren (He-Initialisierung für ReLU)
-                if train_mode == "Bestehendes Modell weitertrainieren (Fortsetzen)":
+                if train_mode == "Bestehendes Modell weitertrainieren":
                     W1 = st.session_state.model["W1"]
                     b1 = st.session_state.model["b1"]
                     W2 = st.session_state.model["W2"]
@@ -439,6 +431,7 @@ with tab_training:
                     train_losses = list(st.session_state.train_losses)
                     test_losses  = list(st.session_state.test_losses)
                 else:
+                    # He-Initialisierung: Varianz angepasst an Eingangsgröße
                     init_rng = np.random.default_rng(42)
                     W1 = (init_rng.standard_normal((actual_input_size, hidden_size)) * np.sqrt(2.0 / actual_input_size)).astype(np.float32)
                     b1 = np.zeros((1, hidden_size), dtype=np.float32)
@@ -466,7 +459,7 @@ with tab_training:
                     test_losses.append(val_loss)
 
                     # --- Backpropagation ---
-                    # Gradienten (ohne Lernrate – sauber trennbar für spätere Optimizer-Erweiterungen)
+                    # Gradienten separat berechnen (Lernrate erst beim Update anwenden)
                     dz2     = (a2 - y_train) * a2 * (1.0 - a2)
                     grad_W2 = (a1.T @ dz2) / n_train
                     grad_b2 = np.mean(dz2, axis=0, keepdims=True)
@@ -475,7 +468,7 @@ with tab_training:
                     grad_W1 = (X_train_T @ dz1) / n_train
                     grad_b1 = np.mean(dz1, axis=0, keepdims=True)
 
-                    # --- Parameter-Update (Gradient Descent) ---
+                    # --- Gewichte aktualisieren (Gradient Descent) ---
                     W2 -= learning_rate * grad_W2
                     b2 -= learning_rate * grad_b2
                     W1 -= learning_rate * grad_W1
@@ -484,14 +477,14 @@ with tab_training:
                     if epoch % 50 == 0:
                         progress_bar.progress(epoch / int(epochs))
                         status_text.text(
-                            f"Optimierung läuft | Epoche {epoch}/{int(epochs)} "
+                            f"Epoche {epoch}/{int(epochs)} "
                             f"| Train Loss: {loss:.5f} | Val Loss: {val_loss:.5f}"
                         )
 
                 progress_bar.progress(1.0)
-                status_text.text("Trainings-Zyklus erfolgreich beendet.")
+                status_text.text("Training abgeschlossen.")
 
-                validation_msg = f"Modell erfolgreich auf {actual_input_size} Merkmalen verifiziert."
+                validation_msg = f"Modell erfolgreich auf {actual_input_size} Merkmalen trainiert."
                 st.session_state.last_validation_result = validation_msg
                 st.success(validation_msg)
 
@@ -504,42 +497,41 @@ with tab_training:
                 st.session_state.total_training_count += int(epochs)
 
                 debug_training({
-                    "Lernrate":            learning_rate,
-                    "Trainierte Epochen":  int(epochs),
-                    "Gesamte Epochen":     st.session_state.total_training_count,
-                    "Finaler Train Loss":  loss,
-                    "Finaler Val Loss":    val_loss,
-                    "Input Dimensionen":   actual_input_size,
+                    "Lernrate":           learning_rate,
+                    "Epochen (aktuell)":  int(epochs),
+                    "Epochen (gesamt)":   st.session_state.total_training_count,
+                    "Train Loss (final)": loss,
+                    "Val Loss (final)":   val_loss,
+                    "Eingangsgröße":      actual_input_size,
                 })
                 st.rerun()
 
             except Exception as e:
-                debug_error("Trainingsdurchlauf fehlgeschlagen.", e)
+                debug_error("Training fehlgeschlagen.", e)
                 st.error(f"Fehler während des Trainings: {e}")
 
-    # Loss-Diagramm (nur wenn Modell & Verläufe vorhanden)
+    # Loss-Kurven anzeigen (nur wenn Modell und Verlaufsdaten vorhanden)
     if st.session_state.model and st.session_state.train_losses:
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             y=st.session_state.train_losses,
-            name="Trainings-Verlauf (Train Loss)",
+            name="Trainingsfehler (Train Loss)",
             line=dict(color="#1f77b4", width=2),
         ))
         if st.session_state.test_losses:
             fig.add_trace(go.Scatter(
                 y=st.session_state.test_losses,
-                name="Validierungs-Verlauf (Val Loss)",
+                name="Validierungsfehler (Val Loss)",
                 line=dict(color="#ff9f43", width=2),
             ))
         fig.update_layout(
-            xaxis_title="Epoche (Index)",
-            yaxis_title="Loss (MSE)",
+            xaxis_title="Epoche",
+            yaxis_title="Fehler (MSE)",
             template="plotly_white",
             height=350,
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         )
         st.plotly_chart(fig, width="stretch")
-
 
 # ---------------------------------------------------------------------------
 # TAB 3: INTERAKTIVER 3D-TEST
@@ -548,7 +540,7 @@ with tab_test:
     st.markdown("<h2 style='font-size: 1.5rem; margin-bottom: 1.5rem;'>Interaktiver 3D-Geometrie-Test</h2>", unsafe_allow_html=True)
 
     if st.session_state.model is None:
-        st.warning("Zugriff verweigert: Kein aktives Modell im Speicher ermittelt. Bitte lade oder trainiere ein Modell.")
+        st.warning("Kein Modell geladen. Bitte zuerst ein Modell trainieren oder importieren.")
     else:
         model = st.session_state.model
         current_input_dim = model["input_size"]
@@ -572,6 +564,7 @@ with tab_test:
             prep_matrix = np.zeros((1, len(test_vector) + 1), dtype=np.float32)
             prep_matrix[0, :len(test_vector)] = test_vector
 
+            # Normalisierung nachholen falls noch nicht geschehen
             if not st.session_state.input_handler.normalization_params and "data" in st.session_state:
                 st.session_state.input_handler.filter_and_prepare(st.session_state.data, fit=True)
 
@@ -586,37 +579,37 @@ with tab_test:
                     final_class = 1 if prediction_raw >= 0.5 else 0
                 else:
                     st.error(
-                        f"[Architektur-Konflikt] Transformierte Daten ({len(norm_vector)}) "
-                        f"passen nicht zur Modell-Eingangsschicht ({current_input_dim})."
+                        f"Architektur-Konflikt: Eingabe hat {len(norm_vector)} Merkmale, "
+                        f"Modell erwartet {current_input_dim}."
                     )
             except Exception as e:
-                debug_error("Geometrische Vorbereitung fehlgeschlagen.", e)
-                st.error(f"Fehler bei der geometrischen Vorbereitung: {e}")
+                debug_error("Vorbereitung des Testvektors fehlgeschlagen.", e)
+                st.error(f"Fehler bei der Datenvorbereitung: {e}")
 
         col_left, col_right = st.columns([1, 1], gap="large")
 
         # ===================================================================
-        # RECHTE SPALTE: Konfiguration & Datengenerierung
+        # RECHTE SPALTE: Eingabe & Objektgenerierung
         # ===================================================================
         with col_right:
-            st.markdown("<h4 style='margin-top:0; color:#444;'>Konfiguration & Datengenerierung</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='margin-top:0; color:#444;'>Eingabe & Objektgenerierung</h4>", unsafe_allow_html=True)
             modus = st.radio(
-                "Eingabemethode definieren:",
-                ["Zufälliges Objekt automatisch generieren (Empfohlen)", "Eigene Koordinaten manuell eingeben"],
+                "Eingabemethode:",
+                ["Zufälliges Objekt generieren (Empfohlen)", "Koordinaten manuell eingeben"],
             )
 
             if "Zufälliges" in modus:
-                st.write("Objekttyp definieren:")
+                st.write("Objekttyp auswählen:")
                 c_btn1, c_btn2 = st.columns(2)
 
                 with c_btn1:
                     is_p = st.session_state.ui_object_type == "perfect"
-                    if st.button("Echte Pyramide (Soll=1)", type="primary" if is_p else "secondary", width="stretch"):
+                    if st.button("Pyramide (Soll = 1)", type="primary" if is_p else "secondary", width="stretch"):
                         st.session_state.ui_object_type = "perfect"
                         st.rerun()
                 with c_btn2:
                     is_a = st.session_state.ui_object_type == "alternative"
-                    if st.button("Rauschen / Andere (Soll=0)", type="primary" if is_a else "secondary", width="stretch"):
+                    if st.button("Andere Form (Soll = 0)", type="primary" if is_a else "secondary", width="stretch"):
                         st.session_state.ui_object_type = "alternative"
                         st.rerun()
 
@@ -630,11 +623,11 @@ with tab_test:
                     )
                     st.session_state.current_test_vector = raw_vector.astype(np.float32).tolist()
                     st.session_state.current_soll = 1.0 if is_pyramid else 0.0
-                    debug_generate("Einzelprobe für die 3D-Analyse generiert.")
+                    debug_generate("Einzelobjekt für 3D-Test generiert.")
                     st.rerun()
 
             else:
-                st.markdown(f"Gib exakt `{expected_raw_dim}` Fließkommazahlen ein. Nutze `NaN` für leere Punkte:")
+                st.markdown(f"Gib exakt `{expected_raw_dim}` Zahlen ein. Leere Punkte mit `NaN` auffüllen:")
                 default_vals = (
                     [str(round(float(v), 2)) for v in np.random.uniform(0.1, 1.0, 15)]
                     + ["NaN"] * (expected_raw_dim - 15)
@@ -647,42 +640,42 @@ with tab_test:
                         parsed.append(np.nan if item.lower() in ("nan", "x") else float(item))
 
                     if len(parsed) == expected_raw_dim:
-                        if st.button("Vorhersage manuell berechnen", width="stretch"):
+                        if st.button("Vorhersage berechnen", width="stretch"):
                             st.session_state.current_test_vector = np.array(parsed, dtype=np.float32).tolist()
                             st.session_state.current_soll = None
                             st.rerun()
                     else:
-                        st.caption(f"Warte auf exakt {expected_raw_dim} Inputs. Aktuell erkannt: {len(parsed)}")
+                        st.caption(f"Benötigt: {expected_raw_dim} Werte – aktuell eingegeben: {len(parsed)}")
                 except Exception as e:
-                    debug_error("Manuelle Eingabe konnte nicht geparst werden.", e)
-                    st.error(f"Syntaxfehler innerhalb der Datenkette: {e}")
+                    debug_error("Manuelle Eingabe konnte nicht verarbeitet werden.", e)
+                    st.error(f"Ungültige Eingabe: {e}")
 
         # ===================================================================
-        # LINKE SPALTE: Analyseergebnisse & 3D-Visualisierung
+        # LINKE SPALTE: Ergebnis & 3D-Visualisierung
         # ===================================================================
         with col_left:
-            st.markdown("<h4 style='margin-top:0; color:#444;'>Analyseergebnis & 3D-Ansicht</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='margin-top:0; color:#444;'>Ergebnis & 3D-Ansicht</h4>", unsafe_allow_html=True)
 
             if prediction_raw is not None and test_vector is not None and norm_vector is not None:
                 col_metric1, col_metric2 = st.columns([3, 2])
                 with col_metric1:
                     if final_class == 1:
-                        st.success("Struktur als Pyramide klassifiziert")
+                        st.success("Pyramide erkannt")
                     else:
-                        st.info("Keine Pyramidenstruktur erkannt")
+                        st.info("Keine Pyramide erkannt")
                 with col_metric2:
-                    st.metric("Netzwerk-Sicherheit", f"{prediction_raw * 100:.2f} %")
+                    st.metric("Modell-Konfidenz", f"{prediction_raw * 100:.2f} %")
 
-                with st.expander("Technische Details einsehen"):
+                with st.expander("Technische Details"):
                     if "Zufälliges" in modus and soll_ergebnis is not None:
-                        st.caption(f"Soll-Vorgabe des Generators: {int(soll_ergebnis)}")
+                        st.caption(f"Erwartetes Ergebnis (Soll): {int(soll_ergebnis)}")
                     feature_preview = [
-                        f"Feature_{i}: {val:.2f}" if not np.isnan(val) else "Feature: NaN"
+                        f"Merkmal_{i}: {val:.2f}" if not np.isnan(val) else "Merkmal: NaN"
                         for i, val in enumerate(norm_vector[:15])
                     ]
                     st.caption(", ".join(feature_preview) + " ...")
 
-                # --- 3D-Rendering ---
+                # --- 3D-Darstellung ---
                 n_pts   = st.session_state.input_handler.max_vertices
                 n_coord = st.session_state.input_handler.coordinates_per_vertex
                 geometrie = test_vector[:n_pts * n_coord].reshape(-1, n_coord)
@@ -696,7 +689,7 @@ with tab_test:
                     if len(gültige) <= 300:
                         fig_3d.add_trace(go.Mesh3d(
                             x=x_k, y=y_k, z=z_k,
-                            opacity=0.35, color=mesh_color, name="Volumenkörper", alphahull=0,
+                            opacity=0.35, color=mesh_color, name="Körper", alphahull=0,
                         ))
                     fig_3d.add_trace(go.Scatter3d(
                         x=x_k, y=y_k, z=z_k,
@@ -715,6 +708,6 @@ with tab_test:
                     )
                     st.plotly_chart(fig_3d, width="stretch")
                 else:
-                    st.info("Nicht genug gültige 3D-Punkte zum Rendern (mindestens 3 benötigt).")
+                    st.info("Zu wenige gültige Punkte für die 3D-Darstellung (mind. 3 erforderlich).")
             else:
-                st.info("Wähle ein Objekt aus oder generiere eines, um die 3D-Ansicht und Analyse zu starten.")
+                st.info("Objekt generieren oder Koordinaten eingeben, um die Analyse zu starten.")

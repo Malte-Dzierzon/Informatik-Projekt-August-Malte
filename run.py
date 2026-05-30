@@ -198,18 +198,57 @@ if __name__ == "__main__":
     # OS-Terminal säubern (Native Variante ohne Subprozess-Flackern auf Linux)
     sys.stdout.write("\033[H\033[2J")
     sys.stdout.flush()
-    
-    # 1. Animierter Aufbau der originalen Pyramide
-    animate_pyramid(PYRAMID_LINES, delay=0.02)
-    
-    # 2. Tech-Rahmen einblenden (Länge angepasst an Grafik)
-    print("┌" + "─" * 108 + "┐")
-    matrix_glitch_text("│                   >>>  K I - P Y R A M I D E N - P R O J E K T  2 0 2 6  <<<                    │", delay=0.01)
-    print("└" + "─" * 108 + "┘")
-    print()
-    
-    # 3. Validierung, Cooldown & Start
-    check_and_install_dependencies()
-    print("\n" + "=" * 110)
-    
-    start_streamlit_app()   
+
+    def is_android_termux() -> bool:
+        """Erkennt Android/Termux anhand typischer Umgebungsvariablen."""
+        android_data = os.environ.get("ANDROID_DATA")
+        termux_flag = os.environ.get("TERMUX_VERSION") or os.environ.get("PREFIX", "").startswith("/data/data/")
+        return bool(android_data and termux_flag)
+
+    def start_cli_app():
+        """Startet die Terminal-Alternative `app_cli.py` für Android/Termux."""
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        cli_app = os.path.join(script_dir, "app_cli.py")
+
+        if not os.path.exists(cli_app):
+            debug_error(f"Kern-Instanz '{cli_app}' fehlt!")
+            sys.exit(1)
+
+        # Sicherstellen, dass das Verzeichnis im Importpfad ist.
+        if script_dir not in sys.path:
+            sys.path.insert(0, script_dir)
+
+        try:
+            import app_cli
+            app_cli.main()
+        except KeyboardInterrupt:
+            print()
+            debug_info("CLI-Anwendung vom Benutzer beendet.")
+        except Exception as e:
+            debug_error("Fehler beim Start der CLI-Anwendung.", e)
+            sys.exit(1)
+
+    if __name__ == "__main__":
+        # OS-Terminal säubern (Native Variante ohne Subprozess-Flackern auf Linux)
+        sys.stdout.write("\033[H\033[2J")
+        sys.stdout.flush()
+
+        if is_android_termux():
+            print("[ANDROID] Termux-Umgebung erkannt. Starte terminalbasiertes Interface...")
+            time.sleep(0.25)
+            start_cli_app()
+        else:
+            # 1. Animierter Aufbau der originalen Pyramide
+            animate_pyramid(PYRAMID_LINES, delay=0.02)
+
+            # 2. Tech-Rahmen einblenden (Länge angepasst an Grafik)
+            print("┌" + "─" * 108 + "┐")
+            matrix_glitch_text("│                   >>>  K I - P Y R A M I D E N - P R O J E K T  2 0 2 6  <<<                    │", delay=0.01)
+            print("└" + "─" * 108 + "┘")
+            print()
+
+            # 3. Validierung, Cooldown & Start
+            check_and_install_dependencies()
+            print("\n" + "=" * 110)
+
+            start_streamlit_app()   

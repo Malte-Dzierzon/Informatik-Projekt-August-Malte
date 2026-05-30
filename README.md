@@ -44,7 +44,7 @@ Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe
 - Trainiert einen binären Klassifikator auf prozedural generierten 3D-Eckpunktdaten (Pyramiden vs. Rauschen)
 - Verarbeitet variable Punktanzahlen pro Objekt (4–12 Eckpunkte) via dynamisches Padding
 - Speichert und setzt Training sessionübergreifend fort — via JSON-Checkpoint-System
-- Enthält ein interaktives Streamlit-Dashboard und einen 3D-Plotly-Visualizer
+- Enthält ein interaktives Streamlit-Dashboard und einen 3D-Plotly-Visualizer
 
 ---
 
