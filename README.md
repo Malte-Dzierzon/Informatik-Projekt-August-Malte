@@ -57,7 +57,7 @@ Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe
 ## Quickstart
 
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/Malte-Dzierzon/Informatik-Projekt-August-Malte.git
 python run.py
 ```
 
