@@ -11,6 +11,7 @@ import os
 import importlib.util
 import time
 import random
+import argparse
 
 # Fallback für debug_utils, falls das Skript isoliert ausgeführt wird
 try:
@@ -150,14 +151,14 @@ def render_progress_bar(package_name, current, total, percentage):
     sys.stdout.flush()
 
 
-def check_and_install_dependencies():
+def check_and_install_dependencies(packages):
     """Prüft Abhängigkeiten und installiert fehlende Module mit echter Echtzeit-Progressbar."""
     matrix_glitch_text("[SYSTEM] Initialisiere Core-Validierung...", delay=0.02)
     missing_packages = []
     
     spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
     
-    for package in REQUIRED_PACKAGES:
+    for package in packages:
         import_name = IMPORT_MAPPING.get(package, package)
         
         for r in range(4):
@@ -253,6 +254,20 @@ def run_countdown(seconds=3):
     time.sleep(0.4)
 
 
+def choose_launch_mode() -> bool:
+    """Fragt den Nutzer, ob Streamlit oder die Terminal-CLI gestartet werden soll."""
+    print("Wähle den Startmodus:")
+    print("  1) Streamlit(Web)")
+    print("  2) Terminal-CLI")
+    while True:
+        choice = input("Auswahl [1-2]: ").strip()
+        if choice == "1":
+            return False
+        if choice == "2":
+            return True
+        print("Ungültige Eingabe. Bitte 1 für Streamlit oder 2 für Terminal wählen.")
+
+
 def start_streamlit_app():
     """Ermittelt den Pfad zur app.py und startet das Dashboard."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -312,11 +327,27 @@ if __name__ == "__main__":
         sys.stdout.write("\033[H\033[2J")
         sys.stdout.flush()
 
-    if is_android_termux():
-        print("[ANDROID] Termux-Umgebung erkannt. Validiere CLI-Bedingungen...")
-        time.sleep(0.25)
-        # Überprüft Abhängigkeiten auch für Android, falls Module fehlen
-        check_and_install_dependencies()
+    parser = argparse.ArgumentParser(description="Startskript: Streamlit oder Terminal-CLI starten")
+    parser.add_argument('--cli', action='store_true', help='Starte die terminalbasierte Android/Termux-Version (app_android)')
+    parser.add_argument('--streamlit', action='store_true', help='Starte explizit das Streamlit-Dashboard')
+    parser.add_argument('--no-prompt', action='store_true', help='Vermeide interaktive Auswahl (nützlich für CI)')
+    args = parser.parse_args()
+
+    if args.cli:
+        selected_cli_mode = True
+    elif args.streamlit:
+        selected_cli_mode = False
+    elif is_android_termux():
+        selected_cli_mode = True
+    elif not args.no_prompt and sys.stdin.isatty():
+        selected_cli_mode = choose_launch_mode()
+    else:
+        selected_cli_mode = False
+
+    if selected_cli_mode:
+        debug_info('[SYSTEM] Starte terminalbasiertes Interface (CLI)')
+        package_list = [pkg for pkg in REQUIRED_PACKAGES if pkg not in ('streamlit', 'plotly', 'pandas')]
+        check_and_install_dependencies(package_list)
         print("\n" + "=" * 110)
         start_cli_app()
     else:
@@ -330,7 +361,7 @@ if __name__ == "__main__":
         print()
 
         # 3. Validierung, Cooldown & Start
-        check_and_install_dependencies()
+        check_and_install_dependencies(REQUIRED_PACKAGES)
         print("\n" + "=" * 110)
 
         start_streamlit_app()

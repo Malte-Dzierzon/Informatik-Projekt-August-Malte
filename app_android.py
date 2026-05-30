@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
 import numpy as np
@@ -61,6 +62,9 @@ STATE: Dict[str, Any] = {
 SPINNER_FRAMES = ["⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"]
 WIDTH = 88
 
+# ------------------------------------------------------------------
+# BENUTZEROBERFLÄCHE & TERMINAL-RENDERING
+# ------------------------------------------------------------------
 
 def clear_screen() -> None:
     os.system("cls" if os.name == "nt" else "clear")
@@ -108,6 +112,10 @@ def safe_value(value: Any, fallback: str = "—") -> str:
         return f"{value:.5f}"
     return str(value)
 
+
+# ------------------------------------------------------------------
+# DATEN- & MODELLSTATUS
+# ------------------------------------------------------------------
 
 def get_data_stats() -> Dict[str, Any]:
     if STATE["data"] is None:
@@ -193,6 +201,10 @@ def animate_progress(message: str, iterations: int = 26) -> None:
     sys.stdout.write("\r" + " " * (len(message) + 6) + "\r")
     sys.stdout.flush()
 
+
+# ------------------------------------------------------------------
+# MENÜ- & EINGABE-HILFEN
+# ------------------------------------------------------------------
 
 def ask_menu_choice() -> int:
     if inquirer is not None:
@@ -287,6 +299,10 @@ def invalidate_model_state() -> None:
         STATE["last_validation_result"] = None
         STATE["total_training_count"] = 0
 
+
+# ------------------------------------------------------------------
+# DATENSATZ-ERZEUGUNG & IMPORT
+# ------------------------------------------------------------------
 
 def load_data() -> None:
     render_header()
@@ -385,6 +401,10 @@ def import_csv_dataset() -> None:
 
     pause()
 
+
+# ------------------------------------------------------------------
+# TRAINING & MODELLE
+# ------------------------------------------------------------------
 
 def train_model() -> None:
     if STATE["data"] is None:
@@ -516,6 +536,10 @@ def train_model() -> None:
 
     pause()
 
+
+# ------------------------------------------------------------------
+# AUSGABE & EVALUATION
+# ------------------------------------------------------------------
 
 def show_results() -> None:
     render_header()
@@ -666,6 +690,22 @@ def prompt_manual_vector() -> Optional[np.ndarray]:
         return None
 
 
+def get_downloads_folder() -> Path:
+    home = Path.home()
+    downloads = home / "Downloads"
+
+    if sys.platform.startswith("linux") or sys.platform.startswith("android"):
+        for candidate in [Path("/sdcard/Download"), Path("/sdcard/Downloads"), downloads]:
+            if candidate.exists() and candidate.is_dir():
+                return candidate
+
+    try:
+        downloads.mkdir(parents=True, exist_ok=True)
+        return downloads
+    except Exception:
+        return home
+
+
 def export_model() -> None:
     render_header()
     boxed(["Modell exportieren"], width=WIDTH)
@@ -678,6 +718,14 @@ def export_model() -> None:
     animate_progress("Exportiere Modell", iterations=18)
 
     try:
+        export_path = Path(os.path.expanduser(filename))
+        if not export_path.is_absolute():
+            export_path = get_downloads_folder() / export_path
+        if export_path.is_dir():
+            raise IsADirectoryError(f"'{export_path}' ist ein Verzeichnis.")
+        if not export_path.parent.exists():
+            export_path.parent.mkdir(parents=True, exist_ok=True)
+
         model = STATE["model"]
         payload = {
             "W1": model["W1"].tolist(),
@@ -695,9 +743,24 @@ def export_model() -> None:
             },
             "normalization_params": model.get("normalization_params", {}),
         }
-        with open(filename, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-        boxed([f"Modell erfolgreich gespeichert: {filename}"], width=WIDTH)
+
+        def write_payload(path: Path):
+            with path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, indent=2)
+
+        try:
+            if not export_path.parent.exists() or not os.access(export_path.parent, os.W_OK):
+                raise PermissionError(f"Schreibzugriff fehlt für: {export_path.parent}")
+            write_payload(export_path)
+            boxed([f"Modell erfolgreich gespeichert: {export_path}"], width=WIDTH)
+        except PermissionError:
+            fallback_path = Path.home() / export_path.name
+            boxed([
+                f"Keine Schreibberechtigung für '{export_path}'.",
+                f"Speichere stattdessen nach: {fallback_path}"
+            ], width=WIDTH)
+            write_payload(fallback_path)
+            boxed([f"Modell erfolgreich gespeichert: {fallback_path}"], width=WIDTH)
     except Exception as exc:
         debug_error("Modell-Export fehlgeschlagen.", exc)
         boxed([f"Fehler beim Speichern: {exc}"], width=WIDTH)

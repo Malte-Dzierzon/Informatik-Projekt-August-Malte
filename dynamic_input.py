@@ -11,6 +11,9 @@ from typing import Tuple, Dict, Optional
 
 from pyramid_generator import PYRAMIDEN_KERNPUNKTE
 
+# ------------------------------------------------------------------
+# KONSTANTEN & VORDEFINIERTES FEATURE-SET
+# ------------------------------------------------------------------
 # C(5,2) = 10 paarweise Abstände zwischen den 5 Kernpunkten
 _ANZAHL_DISTANZEN: int = (PYRAMIDEN_KERNPUNKTE * (PYRAMIDEN_KERNPUNKTE - 1)) // 2
 
@@ -27,6 +30,9 @@ class DynamicInputHandler:
         self.coordinates_per_vertex = coordinates_per_vertex
         self.normalization_params: Dict[str, list] = {}
 
+# ------------------------------------------------------------------
+# DYNAMIC INPUT HANDLER
+# ------------------------------------------------------------------
     # ------------------------------------------------------------------
     # GEOMETRISCHE TRANSFORMATION
     # ------------------------------------------------------------------

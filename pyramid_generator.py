@@ -9,6 +9,9 @@ Generiert synthetische Trainingsdaten nach fester Projektvorgabe:
 import numpy as np
 from typing import Tuple, List, Dict, Optional
 
+# ------------------------------------------------------------------
+# PYRAMIDEN-DATENGENERATOR
+# ------------------------------------------------------------------
 PYRAMIDEN_KERNPUNKTE = 5  # 4 Basispunkte + 1 Apex
 
 class PyramidGenerator:
@@ -21,6 +24,9 @@ class PyramidGenerator:
         """Initialisiert den Generator mit einem isolierten Zufalls-Zustand (RNG)."""
         self.rng = np.random.default_rng(seed)
     
+    # ------------------------------------------------------------------
+    # PYRAMIDEN-GENERIERUNG
+    # ------------------------------------------------------------------
     def _generate_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
         """
         Generiert eine strikte Pyramide nach Projektdefinition:
@@ -64,6 +70,9 @@ class PyramidGenerator:
         zusatz_features = np.array([height, balance, base_area, center_x], dtype=np.float32)
         return np.concatenate([coord_block, zusatz_features], dtype=np.float32)
     
+    # ------------------------------------------------------------------
+    # NON-PYRAMIDEN-GENERIERUNG
+    # ------------------------------------------------------------------
     def _generate_non_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
         """
         Generiert hochvariable und dynamische Nicht-Pyramiden.
@@ -140,6 +149,9 @@ class PyramidGenerator:
         zusatz_features = np.array([height, balance, base_area, center_x], dtype=np.float32)
         return np.concatenate([coord_block, zusatz_features], dtype=np.float32)
     
+    # ------------------------------------------------------------------
+    # DATENSET-GENERIERUNG
+    # ------------------------------------------------------------------
     def generate_dataset(self, max_vertices: int = 12, coords_per_vertex: int = 3, 
                          n_pyramids: int = 100, n_non_pyramids: int = 100, 
                          shuffle: bool = True) -> Tuple[np.ndarray, List[Dict]]:
