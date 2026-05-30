@@ -4,10 +4,16 @@ import json
 import pandas as pd
 from datetime import datetime
 import plotly.graph_objects as go
+from PIL import Image
+import os
 
 from debug_utils import debug_error, debug_info, debug_generate, debug_training
 from pyramid_generator import PyramidGenerator
 from dynamic_input import DynamicInputHandler
+
+# 1. Pfad zur PNG-Datei im selben Ordner ermitteln
+icon_path = os.path.join(os.path.dirname(__file__), "icon.png")
+icon_image = Image.open(icon_path)
 
 
 def expit(z: np.ndarray) -> np.ndarray:
@@ -15,7 +21,11 @@ def expit(z: np.ndarray) -> np.ndarray:
     return 1.0 / (1.0 + np.exp(-np.clip(z, -500.0, 500.0)))
 
 
-st.set_page_config(page_title="Pyramiden-Klassifikation", layout="wide")
+st.set_page_config(
+    page_title="Pyramiden-Klassifikation", 
+    layout="wide",
+    page_icon=icon_image
+    )
 
 st.markdown("""
     <style>
