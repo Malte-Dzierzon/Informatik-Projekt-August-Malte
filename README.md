@@ -41,8 +41,7 @@ Vollständige Dokumentation, Architektur-Details und mathematische Hintergründe
 
 ## Stack
 
-`numpy` &nbsp; `scipy` &nbsp; `streamlit` &nbsp; `plotly` &nbsp; `pandas`
-
+`numpy` &nbsp; `scipy` &nbsp; `streamlit` &nbsp; `plotly` &nbsp; `pandas` &nbsp; `python` 
 
 ```
 ⠀⠀⠀⠀⢠⡶⠚⢷⣤⡀⠀⠀⠀⠀⠀⣲⡶⠛⠻⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
