@@ -1,7 +1,7 @@
 ```
 +--------------------------------------------------+
 |                                                  |
-|   PYRAMIDEN  ERKENNUNG    v2.0              |
+|   PYRAMIDEN  ERKENNUNG    v2.0                   |
 |   ──────────────────────────────────────────     |
 |   Binäre 3D-Objektklassifikation                 |
 |                                                  |
@@ -11,9 +11,11 @@
 ## Quickstart
 
 ```bash
-1. git clone https://github.com/Malte-Dzierzon/Informatik-Projekt-August-Malte.git
+git clone https://github.com/Malte-Dzierzon/Informatik-Projekt-August-Malte.git
+```
 
-2. python run.py
+```bash
+python run.py
 ```
 
 
