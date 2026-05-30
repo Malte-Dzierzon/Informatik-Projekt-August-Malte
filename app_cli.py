@@ -1,3 +1,4 @@
+import csv
 import json
 import os
 import sys
@@ -5,7 +6,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 import numpy as np
-import pandas as pd
 
 from debug_utils import animated_message, debug_error, debug_generate, debug_info, debug_training
 from dynamic_input import DynamicInputHandler
@@ -247,11 +247,19 @@ def import_csv_dataset() -> None:
     animate_banner("Datei wird analysiert", rounds=2)
 
     try:
-        df = pd.read_csv(path, low_memory=False)
-        if all(str(col).replace('.', '', 1).isdigit() or 'Unnamed' in str(col) for col in df.columns):
-            df = pd.read_csv(path, header=None, low_memory=False)
+        with open(path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.reader(csvfile)
+            rows: List[List[str]] = [row for row in reader if row]
 
-        data = df.to_numpy(dtype=np.float32)
+        if not rows:
+            raise ValueError("Die CSV-Datei ist leer.")
+
+        first_row = rows[0]
+        has_header = any(not cell.replace('.', '', 1).replace('-', '', 1).isdigit() for cell in first_row)
+        if has_header:
+            rows = rows[1:]
+
+        data = np.array(rows, dtype=np.float32)
         if data.ndim != 2 or data.shape[1] < 2:
             raise ValueError("CSV muss mindestens zwei Spalten besitzen.")
 
