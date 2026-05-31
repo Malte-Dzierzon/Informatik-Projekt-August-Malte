@@ -139,6 +139,9 @@ def animate_pyramid(lines, delay=0.01):
     print("\n")
 
 
+ANDROID_SPINNER_FRAMES = ["|", "/", "-", "\\"]
+
+
 def render_progress_bar(package_name, current, total, percentage):
     """Zeigt eine Cyberpunk-Style Progressbar im Terminal an."""
     bar_width = 30
@@ -150,86 +153,100 @@ def render_progress_bar(package_name, current, total, percentage):
     sys.stdout.flush()
 
 
+def render_android_spinner(package_name, current, total, frame):
+    """Zeigt für Android/Termux einen schmalen, einfarbigen Spinner ohne breite Fortschrittsleiste."""
+    sys.stdout.write(f"\r  [{frame}] Installiere {package_name:<12} ({current}/{total})")
+    sys.stdout.flush()
+
+
 def check_and_install_dependencies(packages):
-    """Prüft Abhängigkeiten und installiert fehlende Module mit echter Echtzeit-Progressbar."""
+    """Prüft Abhängigkeiten und installiert fehlende Module mit echtem Feedback."""
     matrix_glitch_text("[SYSTEM] Initialisiere Core-Validierung...", delay=0.02)
     missing_packages = []
-    
-    spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-    
+    android_mode = is_android_termux()
+
+    spinner = ANDROID_SPINNER_FRAMES if android_mode else ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
     for package in packages:
         import_name = IMPORT_MAPPING.get(package, package)
-        
+
         for r in range(4):
             sys.stdout.write(f"\r  {spinner[r % len(spinner)]} Analysiere Environment-Struktur... [{package}]")
             sys.stdout.flush()
             time.sleep(0.03)
-            
+
         if importlib.util.find_spec(import_name) is None:
             missing_packages.append(package)
-            
+
     sys.stdout.write("\r[ERFOLG] Environment-Struktur erfolgreich gescannt.\n\n")
     sys.stdout.flush()
 
     if missing_packages:
         matrix_glitch_text(f"[WARN] Fehlende Module entdeckt: {missing_packages}", delay=0.02)
         matrix_glitch_text("[EXEC] Starte pip-Injektion via Subprozess-Pipeline...", delay=0.02)
-        
+
         total_pkgs = len(missing_packages)
-        
+
         for idx, package in enumerate(missing_packages, 1):
-            # Initiale Bar für das aktuelle Paket auf 0%
-            render_progress_bar(package, idx, total_pkgs, 0)
-            
-            # Basis-Kommando erstellen
             cmd = [sys.executable, "-m", "pip", "install", package]
-            
-            # PEP 668 Schutz für modernere Linux-Distributionen & Termux einpflegen
+
             if os.name != 'nt':
                 cmd.append("--break-system-packages")
-            
-            # Simulation einer dynamischen Progressbar während der Ausführung des Subprozesses
+
             try:
                 proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                
-                # Solange der Installationsprozess läuft, animieren wir die Progressbar hoch
-                fake_progress = 0
+
+                spinner_index = 0
                 while proc.poll() is None:
-                    time.sleep(0.1)
-                    if fake_progress < 85:
-                        fake_progress += random.randint(2, 7)
-                        if fake_progress > 85: fake_progress = 85
-                    render_progress_bar(package, idx, total_pkgs, fake_progress)
-                
-                # Checken, ob die Installation mit Code 0 beendet wurde
+                    time.sleep(0.12)
+                    frame = spinner[spinner_index % len(spinner)]
+                    spinner_index += 1
+
+                    if android_mode:
+                        render_android_spinner(package, idx, total_pkgs, frame)
+                    else:
+                        fake_progress = min(85, (spinner_index * 3) % 86)
+                        render_progress_bar(package, idx, total_pkgs, fake_progress)
+
                 if proc.returncode == 0:
-                    render_progress_bar(package, idx, total_pkgs, 100)
-                    time.sleep(0.1)
+                    if android_mode:
+                        sys.stdout.write(f"\r  [✔] {package:<12} ({idx}/{total_pkgs}) installiert.\n")
+                        sys.stdout.flush()
+                    else:
+                        render_progress_bar(package, idx, total_pkgs, 100)
+                        time.sleep(0.1)
                 else:
-                    # Fehlerbehandlung bei ungültigen Pip-Parametern (z.B. alte Pip-Version ohne --break-system-packages)
                     stderr_output = proc.stderr.read().decode('utf-8', errors='ignore')
                     if "--break-system-packages" in stderr_output or "no such option" in stderr_output.lower():
-                        # Retry ohne den Flag
                         cmd = [sys.executable, "-m", "pip", "install", package]
                         proc_retry = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                         while proc_retry.poll() is None:
-                            time.sleep(0.1)
+                            time.sleep(0.12)
+                            frame = spinner[spinner_index % len(spinner)]
+                            spinner_index += 1
+                            if android_mode:
+                                render_android_spinner(package, idx, total_pkgs, frame)
                         if proc_retry.returncode == 0:
-                            render_progress_bar(package, idx, total_pkgs, 100)
+                            if android_mode:
+                                sys.stdout.write(f"\r  [✔] {package:<12} ({idx}/{total_pkgs}) installiert.\n")
+                                sys.stdout.flush()
+                            else:
+                                render_progress_bar(package, idx, total_pkgs, 100)
+                                time.sleep(0.1)
                             continue
-                    
+
                     raise subprocess.CalledProcessError(proc.returncode, cmd)
-                    
+
             except (subprocess.CalledProcessError, Exception) as e:
-                print() # Zeilenumbruch nach der Progressbar bei Fehler
-                if is_android_termux():
+                print()
+                if android_mode:
                     debug_error(f"Pip-Kompilierung auf Android fehlgeschlagen bei: {package}", e)
                     print("\033[93m[HINWEIS]\033[0m Auf Android/Termux benötigen Pakete wie numpy/scipy native Compiler-Bibliotheken.")
                     print("Bitte installiere sie manuell über Termux via: \033[96mpkg install python-numpy python-scipy\033[0m")
                 else:
                     debug_error(f"Kritischer Fehler bei Injektion von {package}.", e)
                 sys.exit(1)
-                
+
         print("\n\033[92m[OK] Alle Module erfolgreich kompiliert und injiziert.\033[0m")
     else:
         debug_info("Alle Core-Abhängigkeiten sind bereits aktiv.")
