@@ -133,10 +133,12 @@ def animate_pyramid(lines, delay=0.01):
         try:
             print(line)
         except UnicodeEncodeError:
-            # Fallback für Terminals, die absolut kein UTF-8/Braille nativ interpretieren können
             print(line.encode('ascii', errors='replace').decode('ascii'))
         time.sleep(delay)
     print("\n")
+
+
+ANDROID_SPINNER_FRAMES = ["|", "/", "-", "\\"]
 
 
 def render_progress_bar(package_name, current, total, percentage):
@@ -144,93 +146,114 @@ def render_progress_bar(package_name, current, total, percentage):
     bar_width = 30
     filled_len = int(round(bar_width * percentage / 100))
     bar = '█' * filled_len + '░' * (bar_width - filled_len)
-    
-    # Formatierter Ausgabestring mit fester Breite für stabiles UI-Rendering
     sys.stdout.write(f"\r  [\033[92m{bar}\033[0m] {percentage:3d}% | Injektiere: \033[96m{package_name:<12}\033[0m ({current}/{total})")
     sys.stdout.flush()
 
 
+def render_android_spinner(package_name, current, total, frame):
+    """Zeigt für Android/Termux einen schmalen, einfarbigen Spinner ohne breite Fortschrittsleiste."""
+    sys.stdout.write(f"\r  [{frame}] Installiere {package_name:<12} ({current}/{total})")
+    sys.stdout.flush()
+
+
 def check_and_install_dependencies(packages):
-    """Prüft Abhängigkeiten und installiert fehlende Module mit echter Echtzeit-Progressbar."""
+    """Prüft Abhängigkeiten und installiert fehlende Module mit echtem Feedback."""
     matrix_glitch_text("[SYSTEM] Initialisiere Core-Validierung...", delay=0.02)
     missing_packages = []
-    
-    spinner = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-    
+    android_mode = is_android_termux()
+
+    spinner = ANDROID_SPINNER_FRAMES if android_mode else ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
     for package in packages:
         import_name = IMPORT_MAPPING.get(package, package)
-        
+
         for r in range(4):
             sys.stdout.write(f"\r  {spinner[r % len(spinner)]} Analysiere Environment-Struktur... [{package}]")
             sys.stdout.flush()
             time.sleep(0.03)
-            
+
         if importlib.util.find_spec(import_name) is None:
             missing_packages.append(package)
-            
-    sys.stdout.write("\r[ERFOLG] Environment-Struktur erfolgreich gescannt.\n\n")
+
+    sys.stdout.write("\r[ERFOLG] Environment-Struktur erfolgreich gescannt.                          \n\n")
     sys.stdout.flush()
 
     if missing_packages:
         matrix_glitch_text(f"[WARN] Fehlende Module entdeckt: {missing_packages}", delay=0.02)
         matrix_glitch_text("[EXEC] Starte pip-Injektion via Subprozess-Pipeline...", delay=0.02)
-        
+
         total_pkgs = len(missing_packages)
-        
+
         for idx, package in enumerate(missing_packages, 1):
-            # Initiale Bar für das aktuelle Paket auf 0%
-            render_progress_bar(package, idx, total_pkgs, 0)
-            
-            # Basis-Kommando erstellen
             cmd = [sys.executable, "-m", "pip", "install", package]
-            
-            # PEP 668 Schutz für modernere Linux-Distributionen & Termux einpflegen
+
             if os.name != 'nt':
                 cmd.append("--break-system-packages")
-            
-            # Simulation einer dynamischen Progressbar während der Ausführung des Subprozesses
+
             try:
                 proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                
-                # Solange der Installationsprozess läuft, animieren wir die Progressbar hoch
-                fake_progress = 0
+
+                spinner_index = 0
                 while proc.poll() is None:
-                    time.sleep(0.1)
-                    if fake_progress < 85:
-                        fake_progress += random.randint(2, 7)
-                        if fake_progress > 85: fake_progress = 85
-                    render_progress_bar(package, idx, total_pkgs, fake_progress)
-                
-                # Checken, ob die Installation mit Code 0 beendet wurde
+                    time.sleep(0.12)
+                    frame = spinner[spinner_index % len(spinner)]
+                    spinner_index += 1
+
+                    if android_mode:
+                        render_android_spinner(package, idx, total_pkgs, frame)
+                    else:
+                        fake_progress = min(85, (spinner_index * 3) % 86)
+                        render_progress_bar(package, idx, total_pkgs, fake_progress)
+
                 if proc.returncode == 0:
-                    render_progress_bar(package, idx, total_pkgs, 100)
-                    time.sleep(0.1)
+                    if android_mode:
+                        sys.stdout.write(f"\r  [✔] {package:<12} ({idx}/{total_pkgs}) installiert.          \n")
+                        sys.stdout.flush()
+                    else:
+                        # BUG FIX: Progressbar auf 100% setzen, dann Newline für saubere Ausgabe
+                        render_progress_bar(package, idx, total_pkgs, 100)
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
+                        time.sleep(0.1)
                 else:
-                    # Fehlerbehandlung bei ungültigen Pip-Parametern (z.B. alte Pip-Version ohne --break-system-packages)
                     stderr_output = proc.stderr.read().decode('utf-8', errors='ignore')
                     if "--break-system-packages" in stderr_output or "no such option" in stderr_output.lower():
-                        # Retry ohne den Flag
                         cmd = [sys.executable, "-m", "pip", "install", package]
                         proc_retry = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                         while proc_retry.poll() is None:
-                            time.sleep(0.1)
+                            time.sleep(0.12)
+                            frame = spinner[spinner_index % len(spinner)]
+                            spinner_index += 1
+                            if android_mode:
+                                render_android_spinner(package, idx, total_pkgs, frame)
+                            else:
+                                fake_progress = min(85, (spinner_index * 3) % 86)
+                                render_progress_bar(package, idx, total_pkgs, fake_progress)
                         if proc_retry.returncode == 0:
-                            render_progress_bar(package, idx, total_pkgs, 100)
+                            if android_mode:
+                                sys.stdout.write(f"\r  [✔] {package:<12} ({idx}/{total_pkgs}) installiert.          \n")
+                                sys.stdout.flush()
+                            else:
+                                # BUG FIX: Gleiche Newline-Korrektur im Retry-Pfad
+                                render_progress_bar(package, idx, total_pkgs, 100)
+                                sys.stdout.write("\n")
+                                sys.stdout.flush()
+                                time.sleep(0.1)
                             continue
-                    
+
                     raise subprocess.CalledProcessError(proc.returncode, cmd)
-                    
+
             except (subprocess.CalledProcessError, Exception) as e:
-                print() # Zeilenumbruch nach der Progressbar bei Fehler
-                if is_android_termux():
+                print()
+                if android_mode:
                     debug_error(f"Pip-Kompilierung auf Android fehlgeschlagen bei: {package}", e)
                     print("\033[93m[HINWEIS]\033[0m Auf Android/Termux benötigen Pakete wie numpy/scipy native Compiler-Bibliotheken.")
                     print("Bitte installiere sie manuell über Termux via: \033[96mpkg install python-numpy python-scipy\033[0m")
                 else:
                     debug_error(f"Kritischer Fehler bei Injektion von {package}.", e)
                 sys.exit(1)
-                
-        print("\n\033[92m[OK] Alle Module erfolgreich kompiliert und injiziert.\033[0m")
+
+        print("\033[92m[OK] Alle Module erfolgreich kompiliert und injiziert.\033[0m")
     else:
         debug_info("Alle Core-Abhängigkeiten sind bereits aktiv.")
 
@@ -254,17 +277,59 @@ def run_countdown(seconds=3):
 
 
 def choose_launch_mode() -> bool:
-    """Fragt den Nutzer, ob Streamlit oder die Terminal-CLI gestartet werden soll."""
-    print("Wähle den Startmodus:")
-    print("  1) Streamlit(Web)")
-    print("  2) Terminal-CLI")
+    """Fragt den Nutzer mit einem animierten Menü, welcher Startmodus gewählt werden soll."""
+
+    print()
+    matrix_glitch_text("[SYSTEM] Starte Interface-Selektor...", delay=0.02)
+    time.sleep(0.3)
+
+    # Menü-Zeilen mit Breite 52 (inkl. Rand-│)
+    menu_lines = [
+        "  ┌──────────────────────────────────────────────────┐",
+        "  │                                                  │",
+        "  │         >>> STARTMODUS  AUSWAHL <<<              │",
+        "  │                                                  │",
+        "  ├──────────────────────────────────────────────────┤",
+        "  │                                                  │",
+        f"  │   \033[96m[1]\033[0m  Streamlit Web-Dashboard                  │",
+        f"  │   \033[96m[2]\033[0m  Terminal-CLI  (Android / Termux)         │",
+        "  │                                                  │",
+        "  └──────────────────────────────────────────────────┘",
+    ]
+
+    for line in menu_lines:
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+        time.sleep(0.07)
+
+    print()
+
+    # Animierter Prompt-Text
+    prompt = "  \033[93m>>\033[0m Eingabe [1/2]: "
+    for char in prompt:
+        sys.stdout.write(char)
+        sys.stdout.flush()
+        time.sleep(0.022)
+
     while True:
-        choice = input("Auswahl [1-2]: ").strip()
+        choice = input("").strip()
         if choice == "1":
+            print()
+            matrix_glitch_text("[OK] Web-Dashboard ausgewählt. Lade Streamlit-Engine...", delay=0.02)
             return False
         if choice == "2":
+            print()
+            matrix_glitch_text("[OK] Terminal-CLI ausgewählt. Starte Interface...", delay=0.02)
             return True
-        print("Ungültige Eingabe. Bitte 1 für Streamlit oder 2 für Terminal wählen.")
+
+        # Fehlerausgabe und wiederholter Prompt
+        sys.stdout.write("\033[91m  [FEHLER] Ungültige Eingabe. Bitte 1 oder 2 eingeben.\033[0m\n")
+        sys.stdout.flush()
+        time.sleep(0.2)
+        for char in prompt:
+            sys.stdout.write(char)
+            sys.stdout.flush()
+            time.sleep(0.022)
 
 
 def start_streamlit_app():
@@ -353,9 +418,14 @@ if __name__ == "__main__":
         # 1. Animierter Aufbau der originalen Pyramide
         animate_pyramid(PYRAMID_LINES, delay=0.01)
 
-        # 2. Tech-Rahmen einblenden (Länge angepasst an Grafik)
+        # 2. Tech-Rahmen einblenden — BUG FIX: Inhalt korrekt auf 108 Zeichen zentriert
+        HEADER_TEXT = ">>>  INFORMATIK PROJEKT AI&PYRAMIDEN  <<<"   # 41 Zeichen
+        padding_left  = (108 - len(HEADER_TEXT)) // 2              # 33
+        padding_right = 108 - len(HEADER_TEXT) - padding_left      # 34
+        header_line = "│" + " " * padding_left + HEADER_TEXT + " " * padding_right + "│"
+
         print("┌" + "─" * 108 + "┐")
-        matrix_glitch_text("│                 >>>  INFORMATIK PROJEKT AI&PYRAMIDEN  <<<                   │", delay=0.01)
+        matrix_glitch_text(header_line, delay=0.01)
         print("└" + "─" * 108 + "┘")
         print()
 
