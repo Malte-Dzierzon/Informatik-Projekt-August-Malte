@@ -1,187 +1,191 @@
 ﻿"""
-PYRAMIDEN-DATENGENERATOR - Projekt-Version (STRIKT & DYNAMISCH)
-===============================================================
-Generiert synthetische Trainingsdaten nach fester Projektvorgabe:
-- Pyramide (Klasse 1): Exakt 5 Punkte (4 Basis-Punkte auf einer Ebene + 1 Spitze).
-- Nicht-Pyramide (Klasse 0): Hochgradig dynamische, variable Störobjekte.
+Pyramiden-Datengenerator (einfach erklärbar)
+============================================
+Eine Pyramide = 4 Eckpunkte auf einer Ebene + 1 Spitze darüber (= 5 Punkte).
+
+Ablauf für eine Pyramide:
+  1. 5 Punkte im "Bauplan" erzeugen (Basis flach, Spitze oben)
+  2. Mit einer Richtungsmatrix drehen (zufällige Achse + Winkel im Raum)
+  3. Verschieben, damit alles im sichtbaren Bereich liegt
+  4. In einen langen Zahlenvektor packen (Rest mit NaN auffüllen)
 """
 
 import numpy as np
 from typing import Tuple, List, Dict, Optional
 
-# ------------------------------------------------------------------
-# PYRAMIDEN-DATENGENERATOR
-# ------------------------------------------------------------------
-PYRAMIDEN_KERNPUNKTE = 5  # 4 Basispunkte + 1 Apex
+PYRAMIDEN_KERNPUNKTE = 5  # immer 4 Basis + 1 Spitze
+
 
 class PyramidGenerator:
-    """
-    Generiert Daten für das neuronale Netzwerk. Hält sich strikt an die 5-Punkt-Regel
-    für Pyramiden und baut dynamische, knifflige Gegenbeispiele für Klasse 0.
-    """
-    
-    def __init__(self, seed: Optional[int] = None):
-        """Initialisiert den Generator mit einem isolierten Zufalls-Zustand (RNG)."""
-        self.rng = np.random.default_rng(seed)
-    
-    # ------------------------------------------------------------------
-    # PYRAMIDEN-GENERIERUNG
-    # ------------------------------------------------------------------
-    def _generate_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
-        """
-        Generiert eine strikte Pyramide nach Projektdefinition:
-        Exakt 5 Punkte (4 Basis-Punkte auf exakt derselben Z-Ebene + 1 echte Spitze).
-        Der Rest bis max_vertices wird mit NaN aufgefüllt (sichere Markierung für "kein Punkt").
-        """
-        coord_features_len = max_vertices * coords_per_vertex
-        # Use NaN padding instead of zero-padding to avoid accidental (0,0,0) points
-        coord_block = np.full(coord_features_len, np.nan, dtype=np.float32)
-        
-        # 1. Zentrum und Radien für eine saubere viereckige Basis definieren
-        cx, cy = self.rng.uniform(0.4, 0.6, 2)
-        rx, ry = self.rng.uniform(0.15, 0.25, 2)
-        z_basis = 0.2  # Absolut flache Ebene für den Boden
-        
-        # 4 Basis-Punkte (Gegen den Uhrzeigersinn)
-        base = np.array([
-            [cx + rx, cy + ry, z_basis],  # Punkt 1
-            [cx - rx, cy + ry, z_basis],  # Punkt 2
-            [cx - rx, cy - ry, z_basis],  # Punkt 3
-            [cx + rx, cy - ry, z_basis]   # Punkt 4
-        ], dtype=np.float32)
-        
-        # 2. Die einzelne Spitze (Apex) genau über dem Zentrum setzen
-        apex = np.array([
-            cx + self.rng.uniform(-0.02, 0.02),
-            cy + self.rng.uniform(-0.02, 0.02),
-            self.rng.uniform(0.6, 0.85)  # Deutlich höher als die Basis
-        ], dtype=np.float32)
-        
-        # Koordinaten an den Anfang des Blocks schreiben (Exakt 5 Punkte = 15 Werte bei 3D)
-        flat_geometry = np.vstack([base, apex]).flatten()
-        coord_block[:len(flat_geometry)] = flat_geometry[:coord_features_len]
-        
-        # 3. Geometrische Zusatzfeatures berechnen
-        height = apex[2] - z_basis
-        balance = np.linalg.norm(apex[:2] - np.array([cx, cy]))
-        base_area = float((rx * 2) * (ry * 2))
-        center_x = cx
-        
-        zusatz_features = np.array([height, balance, base_area, center_x], dtype=np.float32)
-        return np.concatenate([coord_block, zusatz_features], dtype=np.float32)
-    
-    # ------------------------------------------------------------------
-    # NON-PYRAMIDEN-GENERIERUNG
-    # ------------------------------------------------------------------
-    def _generate_non_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
-        """
-        Generiert hochvariable und dynamische Nicht-Pyramiden.
-        Erzeugt gezielt "Fallen" für die KI, um echtes Verständnis zu erzwingen.
-        """
-        coord_features_len = max_vertices * coords_per_vertex
-        # Use NaN padding to mark unused points (prevents them from being interpreted as origin)
-        coord_block = np.full(coord_features_len, np.nan, dtype=np.float32)
-        
-        # Zufällige Auswahl eines fiesen Stör-Typs für maximale Variation
-        stör_typ = self.rng.choice(["warped_5point", "flat_5point", "dynamic_prism", "pure_chaos"])
-        
-        if stör_typ == "warped_5point":
-            # FALLE 1: Hat 5 Punkte, sieht aus wie eine Pyramide, aber die Basis ist NICHT auf einer Ebene!
-            cx, cy = self.rng.uniform(0.4, 0.6, 2)
-            rx, ry = self.rng.uniform(0.15, 0.25, 2)
-            
-            # Z-Koordinaten der Basis leicht verzerren (keine flache Ebene mehr)
-            z_warped = self.rng.uniform(0.15, 0.35, 4)
-            
-            base = np.array([
-                [cx + rx, cy + ry, z_warped[0]],
-                [cx - rx, cy + ry, z_warped[1]],
-                [cx - rx, cy - ry, z_warped[2]],
-                [cx + rx, cy - ry, z_warped[3]]
-            ], dtype=np.float32)
-            
-            apex = np.array([cx, cy, self.rng.uniform(0.6, 0.85)], dtype=np.float32)
-            flat_geometry = np.vstack([base, apex]).flatten()
-            coord_block[:len(flat_geometry)] = flat_geometry[:coord_features_len]
-            
-        elif stör_typ == "flat_5point":
-            # FALLE 2: Hat 5 Punkte, aber die Spitze ist platt auf den Boden gedrückt (2D-Fläche)
-            cx, cy = self.rng.uniform(0.4, 0.6, 2)
-            rx, ry = self.rng.uniform(0.15, 0.25, 2)
-            z_ebene = 0.2
-            
-            base = np.array([
-                [cx + rx, cy + ry, z_ebene], [cx - rx, cy + ry, z_ebene],
-                [cx - rx, cy - ry, z_ebene], [cx + rx, cy - ry, z_ebene]
-            ], dtype=np.float32)
-            
-            apex = np.array([cx, cy, z_ebene], dtype=np.float32)  # Keine Höhe!
-            flat_geometry = np.vstack([base, apex]).flatten()
-            coord_block[:len(flat_geometry)] = flat_geometry[:coord_features_len]
-            
-        elif stör_typ == "dynamic_prism" and max_vertices >= 6:
-            # GEOMETRIE-VARIATION: Ein Prisma/Würfel mit dynamisch vielen Punkten (Nutzt vollen App-Umfang)
-            effektive_punkte = self.rng.integers(6, max_vertices + 1)
-            half_pts = effektive_punkte // 2
-            
-            # Erzeuge zwei parallele Platten im Raum
-            base_pts = self.rng.uniform(0.2, 0.8, (half_pts, coords_per_vertex)).astype(np.float32)
-            if coords_per_vertex >= 3: base_pts[:, 2] = 0.2
-                
-            top_pts = base_pts.copy()
-            if coords_per_vertex >= 3: top_pts[:, 2] = self.rng.uniform(0.6, 0.8)
-                
-            combined = np.vstack([base_pts, top_pts])
-            coord_block[:combined.size] = combined.flatten()[:coord_features_len]
-            
-        else:
-            # PURE DYNAMIK: Völlig zufälliges Polygon-Chaos im erlaubten Raum
-            effektive_punkte = self.rng.integers(3, max_vertices + 1)
-            anzahl_werte = min(effektive_punkte * coords_per_vertex, coord_features_len)
-            coord_block[:anzahl_werte] = self.rng.uniform(0.2, 0.8, anzahl_werte).astype(np.float32)
 
-        # Zusatzfeatures generieren (Weichen bewusst von den echten Pyramidenwerten ab)
-        height = self.rng.uniform(0.0, 0.5) if stör_typ == "flat_5point" else self.rng.uniform(0.1, 0.9)
-        balance = self.rng.uniform(0.3, 1.5)
-        base_area = self.rng.uniform(0.05, 0.5)
-        center_x = self.rng.uniform(0.2, 0.8)
-        
-        zusatz_features = np.array([height, balance, base_area, center_x], dtype=np.float32)
-        return np.concatenate([coord_block, zusatz_features], dtype=np.float32)
-    
+    def __init__(self, seed: Optional[int] = None):
+        self.rng = np.random.default_rng(seed)
+
     # ------------------------------------------------------------------
-    # DATENSET-GENERIERUNG
+    # Hilfsfunktionen (klein und klar benannt)
     # ------------------------------------------------------------------
-    def generate_dataset(self, max_vertices: int = 12, coords_per_vertex: int = 3, 
-                         n_pyramids: int = 100, n_non_pyramids: int = 100, 
-                         shuffle: bool = True) -> Tuple[np.ndarray, List[Dict]]:
-        """Generiert ein perfekt balanciertes Gesamt-Dataset für das KI-Training."""
-        data = []
-        metadata = []
-        
-        # 1. Echte, strikte Pyramiden generieren
+
+    def _dreh_matrix(self) -> np.ndarray:
+        """
+        Zufällige 3D-Rotation: beliebige Achse im Raum + beliebiger Winkel.
+        So kann die Pyramide in jede Richtung kippen (gleichmäßig verteilt).
+        """
+        achse = self.rng.standard_normal(3).astype(np.float32)
+        achse /= np.linalg.norm(achse)
+        winkel = float(self.rng.uniform(0, 2 * np.pi))
+        c, s = float(np.cos(winkel)), float(np.sin(winkel))
+        x, y, z = achse
+        # Rodrigues: R = I + sin(θ)·K + (1-cos(θ))·K²
+        k = np.array([[0, -z, y], [z, 0, -x], [-y, x, 0]], dtype=np.float32)
+        return (np.eye(3, dtype=np.float32) + s * k + (1 - c) * (k @ k)).astype(np.float32)
+
+    def _punkte_drehen_und_verschieben(self, punkte: np.ndarray, drehen: bool = True) -> np.ndarray:
+        """Drehen mit Zufalls-Richtungsmatrix, dann zufällig verschieben."""
+        if drehen:
+            skalierung = float(self.rng.uniform(0.75, 1.25))
+            punkte = (punkte * skalierung) @ self._dreh_matrix().T
+        verschiebung = self.rng.uniform(0.3, 0.7, 3).astype(np.float32)
+        return (punkte + verschiebung).astype(np.float32)
+
+    def _in_vektor_packen(
+        self,
+        punkte: np.ndarray,
+        max_vertices: int,
+        coords_per_vertex: int,
+        hoehe: float,
+        balance: float,
+        grundflaeche: float,
+        mitte_x: float,
+    ) -> np.ndarray:
+        """5 (oder mehr) Punkte + 4 Extra-Zahlen → ein Trainings-Eintrag."""
+        laenge = max_vertices * coords_per_vertex
+        coords = np.full(laenge, np.nan, dtype=np.float32)
+        coords[: punkte.size] = punkte.reshape(-1)
+        extras = np.array([hoehe, balance, grundflaeche, mitte_x], dtype=np.float32)
+        return np.concatenate([coords, extras])
+
+    def _zusatzwerte(self, basis: np.ndarray, spitze: np.ndarray) -> Tuple[float, float, float, float]:
+        """Einfache Merkmale, die man mündlich erklären kann."""
+        mitte = basis.mean(axis=0)
+        hoehe = float(np.linalg.norm(spitze - mitte))
+        balance = float(np.linalg.norm(spitze[:2] - mitte[:2]))
+        kante1 = basis[1] - basis[0]
+        kante2 = basis[3] - basis[0]
+        grundflaeche = float(np.linalg.norm(np.cross(kante1, kante2)))
+        return hoehe, balance, grundflaeche, float(mitte[0])
+
+    # ------------------------------------------------------------------
+    # Pyramide (Klasse 1)
+    # ------------------------------------------------------------------
+
+    def _generate_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
+        # Schritt 1: Bauplan – Rechteck als Basis, Spitze darüber
+        breite = float(self.rng.uniform(0.15, 0.25))
+        tiefe = float(self.rng.uniform(0.15, 0.25))
+        hoehe_bauplan = float(self.rng.uniform(0.4, 0.6))
+
+        basis = np.array([
+            [breite, tiefe, 0],
+            [-breite, tiefe, 0],
+            [-breite, -tiefe, 0],
+            [breite, -tiefe, 0],
+        ], dtype=np.float32)
+        # Spitze leicht versetzt → nicht immer perfekt mittig (mehr Variation)
+        spitze = np.array([
+            self.rng.uniform(-0.08, 0.08),
+            self.rng.uniform(-0.08, 0.08),
+            hoehe_bauplan,
+        ], dtype=np.float32)
+        punkte = np.vstack([basis, spitze])
+
+        # Schritt 2+3: immer drehen und verschieben
+        punkte = self._punkte_drehen_und_verschieben(punkte, drehen=True)
+
+        basis_out = punkte[:4]
+        spitze_out = punkte[4]
+        extras = self._zusatzwerte(basis_out, spitze_out)
+        return self._in_vektor_packen(punkte, max_vertices, coords_per_vertex, *extras)
+
+    # ------------------------------------------------------------------
+    # Keine Pyramide (Klasse 0) – absichtlich "falsche" Formen
+    # ------------------------------------------------------------------
+
+    def _generate_non_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
+        typ = self.rng.choice(["schief", "flach", "viele_punkte", "zufall"])
+
+        if typ == "schief":
+            # Sieht aus wie Pyramide, aber Basis-Ecken haben unterschiedliche Höhen
+            vektor = self._generate_pyramid(max_vertices, coords_per_vertex)
+            punkte = vektor[:15].reshape(5, 3).copy()
+            punkte[:4, 2] += self.rng.uniform(-0.05, 0.05, 4)
+            vektor[:15] = punkte.reshape(-1)
+            return vektor
+
+        if typ == "flach":
+            # Spitze liegt in der Basis-Ebene → keine echte Pyramide
+            breite = float(self.rng.uniform(0.15, 0.25))
+            tiefe = float(self.rng.uniform(0.15, 0.25))
+            basis = np.array([
+                [breite, tiefe, 0], [-breite, tiefe, 0],
+                [-breite, -tiefe, 0], [breite, -tiefe, 0],
+            ], dtype=np.float32)
+            spitze = basis.mean(axis=0)
+            punkte = np.vstack([basis, spitze])
+            punkte = self._punkte_drehen_und_verschieben(punkte, drehen=False)
+            extras = (0.0, 0.0, 4 * breite * tiefe, float(punkte[:4, 0].mean()))
+            return self._in_vektor_packen(punkte, max_vertices, coords_per_vertex, *extras)
+
+        if typ == "viele_punkte" and max_vertices >= 6:
+            # Zwei Ebenen übereinander = eher Prisma/Würfel, nicht Pyramide
+            anzahl = int(self.rng.integers(6, max_vertices + 1))
+            unten = self.rng.uniform(-0.2, 0.2, (anzahl // 2, 3)).astype(np.float32)
+            oben = unten.copy()
+            oben[:, 2] += float(self.rng.uniform(0.35, 0.55))
+            punkte = self._punkte_drehen_und_verschieben(np.vstack([unten, oben]))
+            extras = (float(oben[0, 2]), 0.5, 0.2, float(punkte[0, 0]))
+            return self._in_vektor_packen(punkte, max_vertices, coords_per_vertex, *extras)
+
+        # Zufällige Punkte ohne Pyramiden-Form
+        anzahl = int(self.rng.integers(3, max_vertices + 1))
+        punkte = self.rng.uniform(0.2, 0.8, (anzahl, coords_per_vertex)).astype(np.float32)
+        extras = (0.3, 0.8, 0.15, 0.5)
+        return self._in_vektor_packen(punkte, max_vertices, coords_per_vertex, *extras)
+
+    # ------------------------------------------------------------------
+    # Öffentliche API (von app.py genutzt)
+    # ------------------------------------------------------------------
+
+    def generate_dataset(
+        self,
+        max_vertices: int = 12,
+        coords_per_vertex: int = 3,
+        n_pyramids: int = 100,
+        n_non_pyramids: int = 100,
+        shuffle: bool = True,
+    ) -> Tuple[np.ndarray, List[Dict]]:
+        gesamt = n_pyramids + n_non_pyramids
+        spalten = max_vertices * coords_per_vertex + 4 + 1
+        data = np.empty((gesamt, spalten), dtype=np.float32)
+
         for i in range(n_pyramids):
-            feat = self._generate_pyramid(max_vertices, coords_per_vertex)
-            label_arr = np.array([1.0], dtype=np.float32)
-            data.append(np.concatenate([feat, label_arr], dtype=np.float32))
-            metadata.append({"id": i, "type": "pyramid", "label": 1})
-        
-        # 2. Variable, dynamische Nicht-Pyramiden generieren
+            data[i, :-1] = self._generate_pyramid(max_vertices, coords_per_vertex)
+            data[i, -1] = 1.0
+
         for i in range(n_non_pyramids):
-            feat = self._generate_non_pyramid(max_vertices, coords_per_vertex)
-            label_arr = np.array([0.0], dtype=np.float32)
-            data.append(np.concatenate([feat, label_arr], dtype=np.float32))
-            metadata.append({"id": n_pyramids + i, "type": "non_pyramid", "label": 0})
-        
-        data_matrix = np.array(data, dtype=np.float32)
-        
-        # 3. Datensatz sauber durchmischen
-        if shuffle and len(data_matrix) > 0:
-            idx = self.rng.permutation(len(data_matrix))
-            data_matrix = data_matrix[idx]
-            metadata = [metadata[x] for x in idx]
-        
-        return data_matrix, metadata
+            data[n_pyramids + i, :-1] = self._generate_non_pyramid(max_vertices, coords_per_vertex)
+            data[n_pyramids + i, -1] = 0.0
+
+        meta = (
+            [{"id": i, "type": "pyramid", "label": 1} for i in range(n_pyramids)]
+            + [{"id": n_pyramids + i, "type": "non_pyramid", "label": 0} for i in range(n_non_pyramids)]
+        )
+
+        if shuffle and gesamt > 0:
+            idx = self.rng.permutation(gesamt)
+            data = data[idx]
+            meta = [meta[k] for k in idx]
+
+        return data, meta
 
     def generate_single_pyramid(self, max_vertices: int, coords_per_vertex: int) -> np.ndarray:
         return self._generate_pyramid(max_vertices, coords_per_vertex)
