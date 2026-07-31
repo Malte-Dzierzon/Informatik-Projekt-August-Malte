@@ -1,403 +1,462 @@
 """
-AUTOMATISCHES SETUP & START-SKRIPT (OPTIMIERT)
-====================================================================
-Überprüft die Abhängigkeiten, bietet eine visuelle Progressbar bei 
-der Pip-Injektion und sichert die Cross-Device-Kompatibilität.
+Automatic Setup & Launch Script
+================================
+Checks dependencies, installs missing packages, and launches the app.
+
+Fast and no-frills: everything prints instantly, and a spinner shows progress
+only while pip/venv work is actually running. Uses Nerd Font icons on
+Linux/macOS terminals that support them and plain ASCII elsewhere (Windows,
+Termux, Linux console, or when RUN_NO_ICONS=1 is set).
 """
 
+import argparse
+import importlib.util
+import os
+import shutil
 import subprocess
 import sys
-import os
-import importlib.util
 import time
-import random
-import argparse
 
-# Fallback für debug_utils, falls das Skript isoliert ausgeführt wird
-try:
-    from debug_utils import debug_error, debug_info
-except ImportError:
-    def debug_error(msg, err=None):
-        print(f"\033[91m[FEHLER] {msg} ({err if err else ''})\033[0m")
-    def debug_info(msg):
-        print(f"\033[94m[INFO] {msg}\033[0m")
+# ---------------------------------------------------------------------------
+# CROSS-PLATFORM TERMINAL SETUP
+# ---------------------------------------------------------------------------
+# Force UTF-8 for Windows terminals (prevents UnicodeEncodeError with glyphs)
+reconfigure_stdout = getattr(sys.stdout, 'reconfigure', None)
+if reconfigure_stdout is not None:
+    try:
+        reconfigure_stdout(encoding='utf-8')
+    except (AttributeError, OSError):
+        pass
 
-# UTF-8 Erzwingung für Windows-Terminals gegen UnicodeEncodeError bei Braille-Grafiken
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
-
-# ANSI-Escape-Zyklen für Windows CMD/PowerShell aktivieren
+# Enable ANSI escape sequences on Windows CMD/PowerShell
 if os.name == 'nt':
     try:
         import ctypes
         kernel32 = ctypes.windll.kernel32
+        # ENABLE_VIRTUAL_TERMINAL_PROCESSING (0x0004)
         kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
-    except Exception:
+    except (ImportError, AttributeError, OSError):
         pass
 
-# Pip-Paketnamen, die installiert werden müssen
-REQUIRED_PACKAGES = [
-    "streamlit",
-    "numpy",
-    "scipy",
-    "pandas",
-    "plotly"
-]
 
-IMPORT_MAPPING = {}
-
-PYRAMID_LINES = [
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⡞⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⠖⠋⠀⠀⡸⠁⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⠋⡟⠁⠀⠀⠀⡴⡁⢁⡇⠀⣀⣠⡤⠶⠖⠛⠋⠉⠉⠉⠉⠉⠉⠉⢉⣉⣽⠶⠶⠦⠤⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠞⠄⢸⠁⠀⠀⢠⢞⠌⣀⡾⠖⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣠⡶⠯⠭⠤⠤⣄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡎⠎⠀⠾⣀⠤⠞⠁⠅⠊⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠝⠒⠢⠤⠤⢤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠸⣎⠀⠀⠀⠀⠀⠀⠠⡐⠀⣀⡤⠤⢖⣲⠶⠖⠒⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⢓⠲⠤⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡠⠴⠽⠤⠀⠀⠀⠠⠊⠐⡴⠋⠀⣠⠞⡩⠐⠈⠀⠀⠉⠉⠒⠒⠦⢤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠠⠤⠶⠶⠶⣶⡤⠴⣄⣉⠓⢦⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⠋⠀⠀⠀⠀⠀⠀⠉⠢⡀⡼⠁⢀⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠑⢦⡀⠀⠀⠀⠀⠀⠐⠒⠤⣀⠀⠀⠀⠉⠀⠒⠠⢉⠳⣄⠈⠉⠒⠬⣳⢄⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⡤⠞⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡈⠌⠢⢀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠳⡀⠀⠀⠀⠀⠀⠀⠂⠝⠢⣄⠀⠀⠀⠀⠀⠈⠐⠑⢄⠀⠀⠀⠉⠓⢄⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡀⠀⢀⣀⡤⠖⠫⠑⠀⠀⠀⠀⠀⡠⠚⠁⠀⠀⠀⠀⠀⠀⠈⠁⠒⠚⠦⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢦⡀⠀⠀⠀⠀⠀⠀⠀⠈⠙⠲⢤⣀⡀⠀⠀⠀⠨⡳⣄⠀⠀⠀⠀⠁⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠒⠒⠒⢒⡾⠁⠀⠀⢀⢞⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢒⠲⠤⣑⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠱⡀⠀⠀⢠⡀⠀⠀⠀⠉⡒⠒⠲⠿⠍⠓⠒⠂⠐⠌⢷⣄⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡴⠋⠀⠀⠀⢠⠏⠂⢠⠞⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠐⠌⡑⡄⠀⠀⠀⠀⠀⠀⠀⡄⠀⠀⠀⠀⡀⠀⠀⠀⠙⡄⠀⠀⠙⢦⡀⢢⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠢⡙⢷⣄⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠟⠁⠀⠀⠀⠀⣼⠀⣰⢯⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠁⠹⠀⠀⠀⢰⡄⠀⢀⣧⠀⠀⠀⠀⠙⣷⡄⠀⠀⢹⡄⠀⠀⢨⣷⡈⢷⠀⠀⠀⠀⢶⡆⣤⣀⠀⠀⠀⠙⢮⡻⢷⣄⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣰⠏⣠⡾⠀⠀⠀⠀⢻⢠⡏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢷⠀⢸⢸⠀⠀⠀⠀⠀⠙⡽⣆⠀⠀⣷⠀⠀⠀⢣⢳⡘⡇⠀⠀⣄⠀⠹⡌⠙⠻⠷⣶⣤⣤⣁⣰⣝⣻⣦⡄⡀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠏⠀⡱⠁⠀⠀⠀⠀⠈⢞⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣄⠀⠀⠀⠀⠀⢸⠀⡎⡌⠀⠀⠀⠀⠀⠀⠰⠹⡄⠀⢸⢰⠀⠀⠀⢊⢧⡇⠀⠀⠘⢄⠀⠐⡀⠄⠀⠈⠳⣍⠉⠉⠉⠉⠁⠀⠁",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⠘⡴⠁⠀⠀⠀⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢳⢆⠀⠀⠀⠀⡜⡜⡰⠀⠀⠀⠀⠀⠀⠀⠀⢃⢻⡀⢸⢸⠀⠀⠀⠀⢺⠁⠀⠀⠀⠈⢣⠀⠘⡆⢀⠂⠀⠈⢣⡀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢈⣞⠂⠀⠀⠀⡜⠈⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣎⠄⠀⠀⡐⢋⠔⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⡼⡇⡜⢦⡀⠀⠀⠀⠈⠀⠀⠀⠀⠀⠡⢳⡀⢹⡄⠀⠐⠀⠈⢵⡀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡎⡆⠀⠀⠀⡜⠀⠀⠘⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀⠀⠀⠀⠀⠀⠀⠀⣸⢺⡌⢆⠘⠊⠁⠀⠀⢀⡀⠀⠀⠀⠀⡀⠀⠀⢱⡿⡙⠈⣷⡀⠀⠀⠀⠀⡀⠀⠀⠀⠀⢃⢧⠀⡇⠀⡁⠐⠀⠀⢷⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡧⡇⠀⠀⠜⠀⠠⠀⡄⠰⠀⠀⠀⠠⡀⠀⠀⠀⠀⡇⠀⠀⠀⠀⠀⡀⠀⢀⣏⣧⢻⡄⠢⠀⠀⠀⠀⢼⡿⣇⠀⠀⠀⠹⢄⠀⣘⠜⠀⡄⡗⣷⡀⠀⠀⠀⣷⡀⠀⠀⠀⠈⡼⡆⡇⠐⡀⢂⠁⢀⠘⡇⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡄⡇⢀⠌⠠⠀⠡⠀⡇⠀⡆⠀⡰⡅⢁⠀⠀⠀⠀⡇⠀⠀⠀⠀⢼⠁⠀⣸⢵⠈⢖⢻⣆⠑⠄⠀⠀⢸⠈⢾⢷⡀⠀⠀⢛⡆⠁⠀⠀⢇⡟⡜⣧⠀⠀⢸⢇⣷⠀⠀⠀⠀⢁⣧⠃⠐⡀⢂⠐⠠⠀⢻⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣯⠁⠧⠂⠀⡀⠠⠁⠄⡇⠀⠁⡔⡼⠀⠸⡀⠀⠀⢠⢹⠀⠀⠀⢌⣾⡆⢬⢏⠇⠀⠀⣣⢞⢷⣌⠢⡀⢸⡀⠀⢺⢳⡄⠀⠈⢽⠀⠀⠀⢸⢯⠳⢿⠀⢠⡿⡘⡜⡆⠀⠀⠀⠈⢼⠐⠠⠐⢠⡀⠠⠀⢸⡄⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡼⠌⠀⣠⡄⠄⠀⡐⠈⢠⡇⠀⣠⠞⠁⠀⠀⢷⠀⠀⠸⠘⣇⠀⠘⣼⢺⣣⣯⣮⣤⣤⣄⣈⠛⢿⣿⣦⣌⠪⣇⠀⠀⢣⢿⡀⠀⢸⡆⢀⣠⣾⡟⠃⢿⡇⢰⡿⠁⢏⣳⠀⠀⠀⢠⠀⠀⠄⡁⠈⣿⢦⡀⢸⡇⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡸⠉⣠⠼⠃⣇⠀⠂⠐⢀⣸⢡⣶⡛⣇⢀⠀⠂⠈⣇⠀⠀⡄⣽⡄⢳⣷⣾⣿⣿⣿⣿⣿⣿⣿⣿⣶⣌⠙⠿⢷⣼⣄⠀⠀⠫⣷⠀⢸⣇⠉⣫⣷⣵⣶⣾⣷⣿⣅⡀⠸⡜⡧⠀⠀⡘⠀⠈⢴⢨⣄⠐⢷⡹⣼⠃⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡰⠃⠉⠁⠀⠀⣿⠀⢁⡶⣻⣷⡻⠖⢫⠽⣆⠠⠀⠂⠘⣧⠀⠇⣿⢹⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡀⠀⠀⠈⠀⠀⠀⠹⣇⢸⣽⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣭⡇⠇⠠⡇⢐⡀⠆⡈⡇⠙⠲⠽⠿⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡏⢀⡿⡙⠉⢀⣀⠀⠀⠙⢽⣶⣌⠀⠀⢿⣧⡘⣯⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⢹⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢿⣿⣷⢘⠆⢣⣸⣇⠘⠭⣿⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⢸⠇⠁⠀⢀⡛⢿⣦⡀⠀⠑⠻⣶⣆⡜⡾⣳⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⢿⣿⣿⣤⡶⣾⣟⣿⡶⣦⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⣋⣶⣿⣿⣍⡁⠀⠀⣉⢻⡆⠀⣼⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡼⠔⠻⡆⡀⠀⠐⡼⡟⢭⢳⡄⠀⠀⠀⠁⠉⠛⠊⢫⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⣅⣾⣿⣿⣿⠋⠁⠀⠀⠀⠀⠙⢹⣿⣿⣿⣿⣿⣿⡿⢟⣑⣾⣿⠟⡡⣪⣿⣯⠆⣼⣿⠾⣷⠀⣼⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢳⡡⠀⠈⠐⠈⠄⢂⠹⡄⠀⠀⠀⠀⠀⠀⠈⢞⣿⣿⣿⣿⣿⣿⡿⠟⣡⣾⣿⣿⣿⣿⠃⠀⠀⠀⠀⠀⠀⠀⠸⣿⣿⣿⣿⠿⣋⣼⣾⡿⣋⢦⣼⣾⣿⣿⠁⠁⠇⠄⣰⠎⡇⡇⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢳⣕⡀⠀⠀⠀⠀⠀⢁⡀⠀⠀⠀⠀⠀⡀⠈⠺⣻⣿⣿⣿⣿⣦⣿⣿⣿⣿⣿⠿⠁⠀⠀⣲⠶⢤⣄⣀⠀⠀⢻⣿⣿⣥⣷⣿⢟⠩⣔⣴⣿⣿⣿⡿⠃⢰⠀⣠⡾⠃⠀⡷⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠳⣤⣀⠀⠀⣀⡨⠵⡄⠀⠀⠀⠀⠀⡐⠀⠈⠚⠽⠛⣿⣿⣿⡿⠻⠛⠁⠀⠀⠀⠀⣿⠀⡀⠠⠉⢻⠂⠀⠙⢟⡿⣿⣿⣮⣾⣿⣿⣿⣿⠟⠁⡘⡿⠚⠋⠀⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠙⠛⠛⠛⠛⠻⣆⢄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢹⠀⠀⡁⢠⡾⠀⠀⠀⠀⠈⠑⠛⠙⠉⠛⠋⠈⠁⠀⡰⣱⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠳⣕⣠⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣇⢁⢠⡾⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡀⠀⠀⠔⣱⠏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠲⠥⣆⣰⣞⣿⣗⣒⣒⣶⡶⠤⣤⣄⣀⠀⠀⠀⠈⠛⠋⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣪⠞⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡟⣗⠉⢟⢦⡀⠀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢻⣿⣿⣿⣿⣿⣿⣿⣿⣷⣿⣿⣿⣶⣦⡶⣤⣤⣤⣤⣤⣤⣤⣴⣶⣴⣤⣤⠶⠞⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣇⠈⠀⠀⠀⢻⣼⣯⣷⣿⣿⣯⣽⣿⣖⣒⣶⡦⠤⢤⣄⣀⣀⣀⣀⣀⣠⣿⡻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣶⣶⣶⣶⣶⣿⣿⣯⣅⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⡄⠀⠀⠀⢠⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣾⣿⣯⣭⣽⣟⣛⣒⠲⠦⠤⢤⣤⣄⣀⣀⡀⠀⠀⠀⣀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢰⡟⠛⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣶⣶⣦⣬⣍⣷⣠⠶⢫⠟⣳⡄",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠺⢵⣰⣒⢾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡟⠁⠀⠀⠈⣸⠇",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⣰⠏⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⡀⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠃⠀⢄⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⢼⣃⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡼⠀⠉⠑⠪⣿⣿⣿⣿⣿⣿⣿⣿⣿⠏⠀⠀⠀⠡⠀⠹⣄⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡉⠙⠛⠻⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣟⣔⣢⣆⣿⠟⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀⡀⠀⠀⠈⠙⠻⢿⣿⠿⠛⠉⠏⠀⠀⠀⠀⠀⠁⠀⠈⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠉⠉⠛⠻⠿⣿⣿⣿⣿⡿⠋⠀⠉⠉⠉⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡇⠀⠇⠀⠀⠀⢠⠾⠛⠉⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⡀⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠛⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⣾⣿⣿⣿⣿⣷⡄⣆⠈⢛⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⣀⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣀⠀⢹⠀⠀⠀⠀⠀⣠⣴⣶⣶⣤⡀⠀⠀⠀⠀⣾⣿⣿⣿⡿⣿⢿⣗⡈⡔⡘⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣍⣛⠒⠶⢤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⣠⠴⠛⠉⠀⣠⠇⢸⡄⠀⠀⠀⣾⣿⣿⣿⣿⣿⣿⣆⠔⠞⠲⣿⣿⣿⣿⡾⣃⣾⡿⠘⠄⠛⢰⣿⠟⠹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣶⣤⣍⢳⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⣠⠞⠁⠀⠀⢀⡼⠁⢠⠇⠀⠀⠀⢐⣿⣿⣿⣿⢟⣿⣿⡿⢦⡰⡤⠟⢻⣿⣿⣷⣿⠟⠁⠀⠀⠀⠋⠁⠀⠀⢹⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣦⢹⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⡼⠁⠀⠀⠀⠀⡞⠀⠀⠈⢹⠀⠀⠀⠈⢽⣿⣿⣵⣿⣿⡿⠃⢸⠀⡇⠀⠀⠈⠀⠀⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⡻⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⣼⠁⠀⠀⠀⠀⢸⠁⠀⠀⠀⡟⠀⠀⠀⠀⠀⠁⠉⠩⠉⠋⠀⠀⣼⣠⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣽⣆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⢀⣀⠀⡇⠀⠀⠀⠀⠀⣿⢰⢾⠙⠛⠒⠊⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡄⠰⢾⣿⣿⣿⣿⣿⣿⣿⡿⠿⠿⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡦⢤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⡎⠈⠧⡇⠀⠀⠀⠀⠀⢹⠸⡅⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡤⢀⡇⠀⣴⣿⣿⣿⣿⣿⠟⠋⠀⠀⠀⠀⠀⠀⠉⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣟⣴⣿⣶⣭⣽⣲⡄⠀⠀⠀⠀⠀",
-"⢱⡀⠀⠉⠀⠀⠀⢂⠀⠈⢧⡙⠲⠤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡰⠁⠛⠐⠀⢹⣿⣿⣿⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠀⠀⠀⠀⠀",
-"⠀⢳⡄⠀⠀⠀⠀⠀⠁⠀⠀⠙⢦⡀⠀⢸⠂⠀⠠⠠⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⡿⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠟⠁⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠱⣦⡀⠀⠀⠀⠀⠀⠑⠄⢀⠉⠒⠸⡆⠀⠀⠀⠙⠦⠜⠒⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⠓⢤⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠋⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠈⠓⢤⡄⠀⠀⠀⠀⠀⠀⠐⠒⠮⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣹⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢿⣿⣿⣿⣿⣿⡿⠛⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⢩⠷⠀⠀⠀⠀⠀⠀⠀⢠⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢐⣻⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠋⠉⠁⠀⠀⢀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠈⠳⠤⣄⣀⣀⣠⠤⠞⡏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣀⣤⡴⠴⠶⠒⠚⠛⠉⠉⠉⠛⠛⠒⠒⠛⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢿⡀⣷⢾⣆⢲⡅⢶⡆⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠐⣇⣆⠄⠀⠀⣀⣀⣤⠤⠶⠚⠋⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀",
-"⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠉⠉⠉⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀"
-]
-
-
-def matrix_glitch_text(text, delay=0.03, glitch_count=3):
-    """Erzeugt einen coolen Cyberpunk/Matrix-Einblendeffekt für Text."""
-    chars = "X@#$&%*+=-_~"
-    for i in range(len(text) + 1):
-        visible = text[:i]
-        if i < len(text):
-            for _ in range(glitch_count):
-                glitch_char = random.choice(chars)
-                sys.stdout.write(f"\r{visible}{glitch_char}")
-                sys.stdout.flush()
-                time.sleep(delay / glitch_count)
-        else:
-            sys.stdout.write(f"\r{visible}")
-    print()
-
-
-def animate_pyramid(lines, delay=0.01):
-    """Baut die Pyramide flüssig und sauber Zeile für Zeile auf."""
-    print("\n")
-    for line in lines:
-        try:
-            print(line)
-        except UnicodeEncodeError:
-            print(line.encode('ascii', errors='replace').decode('ascii'))
-        time.sleep(delay)
-    print("\n")
-
-
-ANDROID_SPINNER_FRAMES = ["|", "/", "-", "\\"]
-
-
-def render_progress_bar(package_name, current, total, percentage):
-    """Zeigt eine Cyberpunk-Style Progressbar im Terminal an."""
-    bar_width = 30
-    filled_len = int(round(bar_width * percentage / 100))
-    bar = '█' * filled_len + '░' * (bar_width - filled_len)
-    sys.stdout.write(f"\r  [\033[92m{bar}\033[0m] {percentage:3d}% | Injektiere: \033[96m{package_name:<12}\033[0m ({current}/{total})")
-    sys.stdout.flush()
-
-
-def render_android_spinner(package_name, current, total, frame):
-    """Zeigt für Android/Termux einen schmalen, einfarbigen Spinner ohne breite Fortschrittsleiste."""
-    sys.stdout.write(f"\r  [{frame}] Installiere {package_name:<12} ({current}/{total})")
-    sys.stdout.flush()
-
-
-def check_and_install_dependencies(packages):
-    """Prüft Abhängigkeiten und installiert fehlende Module mit echtem Feedback."""
-    matrix_glitch_text("[SYSTEM] Initialisiere Core-Validierung...", delay=0.02)
-    missing_packages = []
-    android_mode = is_android_termux()
-
-    spinner = ANDROID_SPINNER_FRAMES if android_mode else ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
-
-    for package in packages:
-        import_name = IMPORT_MAPPING.get(package, package)
-
-        for r in range(4):
-            sys.stdout.write(f"\r  {spinner[r % len(spinner)]} Analysiere Environment-Struktur... [{package}]")
-            sys.stdout.flush()
-            time.sleep(0.03)
-
-        if importlib.util.find_spec(import_name) is None:
-            missing_packages.append(package)
-
-    sys.stdout.write("\r[ERFOLG] Environment-Struktur erfolgreich gescannt.                          \n\n")
-    sys.stdout.flush()
-
-    if missing_packages:
-        matrix_glitch_text(f"[WARN] Fehlende Module entdeckt: {missing_packages}", delay=0.02)
-        matrix_glitch_text("[EXEC] Starte pip-Injektion via Subprozess-Pipeline...", delay=0.02)
-
-        total_pkgs = len(missing_packages)
-
-        for idx, package in enumerate(missing_packages, 1):
-            cmd = [sys.executable, "-m", "pip", "install", package]
-
-            if os.name != 'nt':
-                cmd.append("--break-system-packages")
-
-            try:
-                proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-
-                spinner_index = 0
-                while proc.poll() is None:
-                    time.sleep(0.12)
-                    frame = spinner[spinner_index % len(spinner)]
-                    spinner_index += 1
-
-                    if android_mode:
-                        render_android_spinner(package, idx, total_pkgs, frame)
-                    else:
-                        fake_progress = min(85, (spinner_index * 3) % 86)
-                        render_progress_bar(package, idx, total_pkgs, fake_progress)
-
-                if proc.returncode == 0:
-                    if android_mode:
-                        sys.stdout.write(f"\r  [✔] {package:<12} ({idx}/{total_pkgs}) installiert.          \n")
-                        sys.stdout.flush()
-                    else:
-                        # BUG FIX: Progressbar auf 100% setzen, dann Newline für saubere Ausgabe
-                        render_progress_bar(package, idx, total_pkgs, 100)
-                        sys.stdout.write("\n")
-                        sys.stdout.flush()
-                        time.sleep(0.1)
-                else:
-                    stderr_output = proc.stderr.read().decode('utf-8', errors='ignore')
-                    if "--break-system-packages" in stderr_output or "no such option" in stderr_output.lower():
-                        cmd = [sys.executable, "-m", "pip", "install", package]
-                        proc_retry = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-                        while proc_retry.poll() is None:
-                            time.sleep(0.12)
-                            frame = spinner[spinner_index % len(spinner)]
-                            spinner_index += 1
-                            if android_mode:
-                                render_android_spinner(package, idx, total_pkgs, frame)
-                            else:
-                                fake_progress = min(85, (spinner_index * 3) % 86)
-                                render_progress_bar(package, idx, total_pkgs, fake_progress)
-                        if proc_retry.returncode == 0:
-                            if android_mode:
-                                sys.stdout.write(f"\r  [✔] {package:<12} ({idx}/{total_pkgs}) installiert.          \n")
-                                sys.stdout.flush()
-                            else:
-                                # BUG FIX: Gleiche Newline-Korrektur im Retry-Pfad
-                                render_progress_bar(package, idx, total_pkgs, 100)
-                                sys.stdout.write("\n")
-                                sys.stdout.flush()
-                                time.sleep(0.1)
-                            continue
-
-                    raise subprocess.CalledProcessError(proc.returncode, cmd)
-
-            except (subprocess.CalledProcessError, Exception) as e:
-                print()
-                if android_mode:
-                    debug_error(f"Pip-Kompilierung auf Android fehlgeschlagen bei: {package}", e)
-                    print("\033[93m[HINWEIS]\033[0m Auf Android/Termux benötigen Pakete wie numpy/scipy native Compiler-Bibliotheken.")
-                    print("Bitte installiere sie manuell über Termux via: \033[96mpkg install python-numpy python-scipy\033[0m")
-                else:
-                    debug_error(f"Kritischer Fehler bei Injektion von {package}.", e)
-                sys.exit(1)
-
-        print("\033[92m[OK] Alle Module erfolgreich kompiliert und injiziert.\033[0m")
-    else:
-        debug_info("Alle Core-Abhängigkeiten sind bereits aktiv.")
-
-
-def run_countdown(seconds=3):
-    """Führt einen animierten, coolen Countdown vor dem App-Start aus (Überlauf-sicher)."""
-    print()
-    matrix_glitch_text("[SYSTEM] Alle Checks bestanden. Bereite System-Start vor...", delay=0.02)
-    
-    blocks = ["███", "██", "█"]
-    
-    for i in range(seconds, 0, -1):
-        block_visual = blocks[(i - 1) % len(blocks)]
-        sys.stdout.write(f"\r  >> Starte Server in {i} Sekunden... {block_visual:<3}")
-        sys.stdout.flush()
-        time.sleep(1)
-        
-    sys.stdout.write("\r  >> INITIALISIERE STREAMLIT FRAMEWORK... (100%)\n")
-    sys.stdout.flush()
-    time.sleep(0.4)
-
-
-def choose_launch_mode() -> bool:
-    """Fragt den Nutzer mit einem animierten Menü, welcher Startmodus gewählt werden soll."""
-
-    print()
-    matrix_glitch_text("[SYSTEM] Starte Interface-Selektor...", delay=0.02)
-    time.sleep(0.3)
-
-    # Menü-Zeilen mit Breite 52 (inkl. Rand-│)
-    menu_lines = [
-        "  ┌──────────────────────────────────────────────────┐",
-        "  │                                                  │",
-        "  │         >>> STARTMODUS  AUSWAHL <<<              │",
-        "  │                                                  │",
-        "  ├──────────────────────────────────────────────────┤",
-        "  │                                                  │",
-        f"  │   \033[96m[1]\033[0m  Streamlit Web-Dashboard                  │",
-        f"  │   \033[96m[2]\033[0m  Terminal-CLI  (Android / Termux)         │",
-        "  │                                                  │",
-        "  └──────────────────────────────────────────────────┘",
-    ]
-
-    for line in menu_lines:
-        sys.stdout.write(line + "\n")
-        sys.stdout.flush()
-        time.sleep(0.07)
-
-    print()
-
-    # Animierter Prompt-Text
-    prompt = "  \033[93m>>\033[0m Eingabe [1/2]: "
-    for char in prompt:
-        sys.stdout.write(char)
-        sys.stdout.flush()
-        time.sleep(0.022)
-
-    while True:
-        choice = input("").strip()
-        if choice == "1":
-            print()
-            matrix_glitch_text("[OK] Web-Dashboard ausgewählt. Lade Streamlit-Engine...", delay=0.02)
-            return False
-        if choice == "2":
-            print()
-            matrix_glitch_text("[OK] Terminal-CLI ausgewählt. Starte Interface...", delay=0.02)
-            return True
-
-        # Fehlerausgabe und wiederholter Prompt
-        sys.stdout.write("\033[91m  [FEHLER] Ungültige Eingabe. Bitte 1 oder 2 eingeben.\033[0m\n")
-        sys.stdout.flush()
-        time.sleep(0.2)
-        for char in prompt:
-            sys.stdout.write(char)
-            sys.stdout.flush()
-            time.sleep(0.022)
-
-
-def start_streamlit_app():
-    """Ermittelt den Pfad zur app.py und startet das Dashboard."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    target_app = os.path.join(script_dir, "app.py")
-    
-    if not os.path.exists(target_app):
-        debug_error(f"Kern-Instanz '{target_app}' fehlt!")
-        sys.exit(1)
-        
-    run_countdown(seconds=3)
-    print("-" * 110)
-    
-    try:
-        subprocess.run([sys.executable, "-m", "streamlit", "run", target_app], check=True)
-    except KeyboardInterrupt:
-        print()
-        debug_info("System vom Benutzer kontrolliert heruntergefahren.")
-    except subprocess.CalledProcessError as e:
-        debug_error("Streamlit-Instanz wurde unerwartet beendet.", e)
-
-
+# ---------------------------------------------------------------------------
+# PLATFORM DETECTION & GLYPHS
+# ---------------------------------------------------------------------------
 def is_android_termux() -> bool:
-    """Erkennt Android/Termux anhand typischer Umgebungsvariablen."""
+    """Detect Android/Termux environment."""
     android_data = os.environ.get("ANDROID_DATA")
     termux_flag = os.environ.get("TERMUX_VERSION") or os.environ.get("PREFIX", "").startswith("/data/data/")
     return bool(android_data and termux_flag)
 
 
-def start_cli_app():
-    """Startet die Terminal-Alternative `app_android.py` für Android/Termux."""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    cli_app = os.path.join(script_dir, "app_android.py")
+IS_WINDOWS = os.name == 'nt'
+IS_TERMUX = is_android_termux()
 
-    if not os.path.exists(cli_app):
-        debug_error(f"Kern-Instanz '{cli_app}' fehlt!")
+# Linux/macOS terminals with a Nerd Font (Kitty, WezTerm, Alacritty, ...) get
+# proper icon glyphs; Windows cmd, Termux and the Linux console fall back to
+# plain ASCII. Set RUN_NO_ICONS=1 to force the ASCII fallback anywhere.
+force_plain = os.environ.get("RUN_NO_ICONS") == "1" or os.environ.get("TERM") == "linux"
+USE_ICONS = not IS_WINDOWS and not IS_TERMUX and not force_plain
+
+if USE_ICONS:
+    # Nerd Font (Font Awesome) private-use-area codepoints
+    ICONS = {
+        "info": "\uf05a",   # info-circle
+        "ok": "\uf058",     # check-circle
+        "err": "\uf057",    # times-circle
+        "warn": "\uf071",   # exclamation-triangle
+        "web": "\uf108",    # desktop
+        "tui": "\uf120",    # terminal
+        "dl": "\uf019",     # download
+        "cube": "\uf1b2",   # cube
+    }
+    SPINNER_FRAMES = ["\u280b", "\u2819", "\u2839", "\u2838", "\u283c",
+                      "\u2834", "\u2826", "\u2827", "\u2807", "\u280f"]
+else:
+    ICONS = {
+        "info": "[INFO]", "ok": "[OK]", "err": "[ERROR]", "warn": "[WARN]",
+        "web": "[WEB]", "tui": "[TUI]", "dl": "->", "cube": "###",
+    }
+    SPINNER_FRAMES = ["|", "/", "-", "\\"]
+
+
+# ---------------------------------------------------------------------------
+# LOGGING HELPERS
+# ---------------------------------------------------------------------------
+def _log(kind: str, color: str, msg: str) -> None:
+    print(f"\033[{color}m{ICONS[kind]} {msg}\033[0m")
+
+
+def log_info(msg: str) -> None:
+    _log("info", "94", msg)
+
+
+def log_error(msg: str, err: Exception | None = None) -> None:
+    _log("err", "91", msg)
+    if err:
+        print(f"\033[91m       {err}\033[0m")
+
+
+def log_success(msg: str) -> None:
+    _log("ok", "92", msg)
+
+
+def log_warn(msg: str) -> None:
+    _log("warn", "93", msg)
+
+
+# ---------------------------------------------------------------------------
+# DEPENDENCY CHECKING & INSTALLATION
+# ---------------------------------------------------------------------------
+REQUIRED_PACKAGES = [
+    "streamlit",
+    "numpy",
+    "scipy",
+    "pandas",
+    "plotly",
+]
+
+# Packages not needed for CLI mode
+CLI_EXCLUDE = {"streamlit", "plotly", "pandas"}
+
+# Isolated virtual environment used when the system Python is externally managed
+# (PEP 668) or lacks write permission — common on many Linux distributions.
+VENV_DIRNAME = ".venv"
+VENV_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), VENV_DIRNAME)
+
+# Set to True once this run falls back to the project venv for installs.
+USED_VENV = False
+
+
+def run_with_spinner(cmd: list[str], label: str, timeout: int = 180) -> subprocess.CompletedProcess:
+    """Run a command while showing a spinner. Output is captured until done."""
+    # No spinner when stdout is redirected (CI, logs) - just run quietly.
+    if not sys.stdout.isatty():
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
+
+    sys.stdout.write(f"  {label} {SPINNER_FRAMES[0]}")
+    sys.stdout.flush()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    start = time.monotonic()
+    frame = 0
+    try:
+        while proc.poll() is None:
+            if time.monotonic() - start > timeout:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(cmd, timeout)
+            frame += 1
+            sys.stdout.write(f"\r  {label} {SPINNER_FRAMES[frame % len(SPINNER_FRAMES)]}")
+            sys.stdout.flush()
+            time.sleep(0.08)
+    except KeyboardInterrupt:
+        proc.kill()
+        proc.wait()
+        raise
+
+    stdout, stderr = proc.communicate()
+    # Clear the spinner line
+    sys.stdout.write("\r" + " " * (len(label) + 8) + "\r")
+    sys.stdout.flush()
+    return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+
+
+def get_venv_python() -> str:
+    """Absolute path to the interpreter inside the project venv."""
+    if os.name == 'nt':
+        return os.path.join(VENV_DIR, "Scripts", "python.exe")
+    return os.path.join(VENV_DIR, "bin", "python")
+
+
+def in_venv() -> bool:
+    """True when already running inside a virtual environment."""
+    return sys.prefix != sys.base_prefix
+
+
+def venv_ready() -> bool:
+    """True when the project venv exists with a working interpreter."""
+    return os.path.exists(get_venv_python())
+
+
+def ensure_venv() -> bool:
+    """Create the project venv if missing. Returns True on success."""
+    if venv_ready():
+        return True
+
+    log_info(f"Creating isolated virtual environment '{VENV_DIRNAME}'...")
+
+    create_cmds = [
+        [sys.executable, "-m", "venv", VENV_DIR],
+        ["python3", "-m", "venv", VENV_DIR],
+    ]
+    if shutil.which("virtualenv"):
+        create_cmds.append(["virtualenv", VENV_DIR])
+
+    created = False
+    for cmd in create_cmds:
+        result = run_with_spinner(cmd, "Creating virtual environment", timeout=180)
+        if result.returncode == 0 and venv_ready():
+            created = True
+            break
+
+    if not created:
+        log_error("Could not create a virtual environment.")
+        log_warn("Install venv support first, then re-run this script:")
+        log_warn("  Debian/Ubuntu: sudo apt install python3-venv")
+        log_warn("  Fedora:        sudo dnf install python3-virtualenv")
+        log_warn("  Arch:          sudo pacman -S python-virtualenv")
+        return False
+
+    # Ensure pip works inside the venv (some distros ship bare venvs)
+    venv_python = get_venv_python()
+    probe = subprocess.run([venv_python, "-m", "pip", "--version"], capture_output=True, text=True, check=False)
+    if probe.returncode != 0:
+        log_info("Bootstrapping pip in the virtual environment...")
+        run_with_spinner([venv_python, "-m", "ensurepip", "--upgrade"], "Bootstrapping pip")
+        run_with_spinner([venv_python, "-m", "pip", "install", "--upgrade", "pip"], "Upgrading pip")
+    return True
+
+
+def install_into_venv(package: str) -> bool:
+    """Install a package into the project venv. Returns True on success."""
+    if not ensure_venv():
+        return False
+    venv_python = get_venv_python()
+    for extra_args in ([], ["--no-build-isolation"]):
+        result = _run_pip_install(package, extra_args, python_bin=venv_python)
+        if result.returncode == 0:
+            return True
+    return False
+
+
+def relaunch_in_venv() -> None:
+    """Relaunch the script with the venv interpreter (packages are visible there)."""
+    log_success(f"All modules installed into the virtual environment '{VENV_DIRNAME}'.")
+    log_info("Relaunching with the venv interpreter...")
+    os.execv(get_venv_python(), [get_venv_python(), os.path.abspath(__file__)] + sys.argv[1:])
+
+
+def is_package_installed(package: str) -> bool:
+    """Check if a package is importable."""
+    import_name = package.replace("-", "_")
+    return importlib.util.find_spec(import_name) is not None
+
+
+def _run_pip_install(package: str, extra_args: list[str] | None = None, python_bin: str | None = None) -> subprocess.CompletedProcess:
+    """Run pip install with given extra arguments."""
+    cmd = [python_bin or sys.executable, "-m", "pip", "install", "--quiet"]
+    if extra_args:
+        cmd.extend(extra_args)
+    cmd.append(package)
+    return run_with_spinner(cmd, f"{ICONS['dl']} Installing {package}", timeout=180)
+
+
+def install_package(package: str, android_mode: bool = False) -> bool:
+    """
+    Install a package with multiple fallback strategies.
+    Returns True on success, False on failure.
+    """
+    global USED_VENV
+
+    # Once this run committed to the venv, use it for every remaining package.
+    if not android_mode and os.name != 'nt' and not in_venv() and USED_VENV:
+        return install_into_venv(package)
+
+    strategies: list[list[str]] = []
+
+    if android_mode:
+        # Termux: try system packages first, then pip with --no-build-isolation
+        strategies = [
+            ["--no-build-isolation"],
+            ["--no-build-isolation", "--no-deps"],
+            [],
+        ]
+    elif os.name == 'nt':
+        # Windows: standard install, then --user, then --break-system-packages
+        strategies = [
+            [],
+            ["--user"],
+            ["--break-system-packages"],
+        ]
+    elif in_venv():
+        # Already inside a venv: plain installs are safe
+        strategies = [[]]
+    else:
+        # Linux/macOS: standard, then --user, then --break-system-packages
+        # (bypasses PEP 668 "externally-managed-environment" blocks)
+        strategies = [
+            [],
+            ["--user"],
+            ["--break-system-packages"],
+        ]
+
+    for extra_args in strategies:
+        result = _run_pip_install(package, extra_args)
+        if result.returncode == 0:
+            return True
+        # If it's a permission/externally-managed error, try next strategy
+        stderr = result.stderr.lower()
+        if "externally-managed-environment" in stderr or "permission denied" in stderr:
+            continue
+        # For other errors, don't retry with different strategies
+        break
+
+    # Last resort on Linux/macOS: install into an isolated project venv so we
+    # sidestep externally-managed environments and permission issues entirely.
+    if not android_mode and os.name != 'nt' and not in_venv() and install_into_venv(package):
+        USED_VENV = True
+        return True
+
+    return False
+
+
+def check_and_install_dependencies(packages: list[str], android_mode: bool = False) -> None:
+    """Install missing packages via pip with fallback strategies."""
+    missing = [p for p in packages if not is_package_installed(p)]
+
+    if not missing:
+        log_info("All core dependencies are already installed.")
+        return
+
+    log_info(f"Missing packages: {', '.join(missing)} - installing via pip...")
+
+    total = len(missing)
+    for idx, package in enumerate(missing, 1):
+        success = install_package(package, android_mode=android_mode)
+
+        if success:
+            log_success(f"({idx}/{total}) {package} installed.")
+        else:
+            log_error(f"Failed to install '{package}' via pip.")
+            if android_mode:
+                log_warn("On Android/Termux, try installing system packages first:")
+                log_warn("  pkg install python-numpy python-scipy python-pandas")
+            elif os.name != 'nt':
+                log_warn("Your system may use an externally managed Python environment.")
+                log_warn("Try: pip install --break-system-packages <package>")
+                log_warn("Or create a virtual environment: python -m venv venv && source venv/bin/activate")
+            sys.exit(1)
+
+    if USED_VENV and not in_venv():
+        # Packages were installed into the venv; relaunch so the app finds them.
+        relaunch_in_venv()
+        return
+
+    log_success("All modules installed successfully.")
+
+
+# ---------------------------------------------------------------------------
+# LAUNCH HELPERS
+# ---------------------------------------------------------------------------
+def print_banner() -> None:
+    """Compact project banner - printed instantly, no animation."""
+    print()
+    if USE_ICONS:
+        title = f"{ICONS['cube']}  INFORMATICS PROJECT - AI & PYRAMIDS"
+        print(f"  \033[1;96m{title}\033[0m")
+        print("  " + "\u2500" * (len(title) + 4))
+    else:
+        print("  >>>  INFORMATICS PROJECT - AI & PYRAMIDS  <<<")
+    print()
+
+
+def choose_launch_mode() -> bool:
+    """Interactive menu to choose the launch mode (True = CLI/TUI)."""
+    print()
+    print("  Select launch mode:")
+    if USE_ICONS:
+        print(f"    {ICONS['web']}  [1]  Streamlit Web Dashboard")
+        print(f"    {ICONS['tui']}  [2]  Terminal UI (TUI)")
+    else:
+        print("    [1]  Streamlit Web Dashboard")
+        print("    [2]  Terminal UI (TUI)")
+    print()
+
+    while True:
+        try:
+            choice = input("  Choice [1/2]: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            print("  Aborted.")
+            sys.exit(0)
+
+        if choice == "1":
+            print()
+            log_success("Web dashboard selected. Starting Streamlit...")
+            return False
+        if choice == "2":
+            print()
+            log_success("Terminal UI selected. Starting interface...")
+            return True
+
+        print("  \033[91mInvalid input - please enter 1 or 2.\033[0m")
+
+
+def start_streamlit_app() -> None:
+    """Launch the Streamlit web dashboard."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    target_app = os.path.join(script_dir, "app.py")
+
+    if not os.path.exists(target_app):
+        log_error(f"Core instance '{target_app}' not found!")
         sys.exit(1)
+
+    log_info("Launching Streamlit dashboard...")
+    try:
+        subprocess.run([sys.executable, "-m", "streamlit", "run", target_app], check=False)
+    except KeyboardInterrupt:
+        print()
+        log_info("System shut down by user.")
+    except subprocess.CalledProcessError as e:
+        log_error("Streamlit instance terminated unexpectedly.", e)
+
+
+def start_cli_app() -> None:
+    """Launch the terminal UI (app_tui package)."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
     if script_dir not in sys.path:
         sys.path.insert(0, script_dir)
 
     try:
-        import app_android
-        app_android.main()
+        from app_tui.main import main as tui_main
+        tui_main()
     except KeyboardInterrupt:
         print()
-        debug_info("CLI-Anwendung vom Benutzer beendet.")
-    except Exception as e:
-        debug_error("Fehler beim Start der CLI-Anwendung.", e)
+        log_info("Terminal UI terminated by user.")
+    except Exception as e:  # noqa: BLE001
+        log_error("Failed to start terminal UI.", e)
         sys.exit(1)
 
 
-if __name__ == "__main__":
-    # OS-Terminal säubern (Cross-device sicher über system-call fallback)
+def clear_screen() -> None:
+    """Cross-platform screen clear."""
     if os.name == 'nt':
         os.system('cls')
     else:
         sys.stdout.write("\033[H\033[2J")
         sys.stdout.flush()
 
-    parser = argparse.ArgumentParser(description="Startskript: Streamlit oder Terminal-CLI starten")
-    parser.add_argument('--cli', action='store_true', help='Starte die terminalbasierte Android/Termux-Version (app_android)')
-    parser.add_argument('--streamlit', action='store_true', help='Starte explizit das Streamlit-Dashboard')
-    parser.add_argument('--no-prompt', action='store_true', help='Vermeide interaktive Auswahl (nützlich für CI)')
+
+# ---------------------------------------------------------------------------
+# MAIN ENTRY POINT
+# ---------------------------------------------------------------------------
+if __name__ == "__main__":
+    clear_screen()
+
+    parser = argparse.ArgumentParser(description="Launcher: Start Streamlit or Terminal CLI")
+    parser.add_argument('--cli', action='store_true', help='Start the terminal UI (TUI)')
+    parser.add_argument('--streamlit', action='store_true', help='Explicitly start Streamlit dashboard')
+    parser.add_argument('--no-prompt', action='store_true', help='Skip interactive selection (useful for CI)')
     args = parser.parse_args()
 
-    if args.cli:
+    # Determine launch mode
+    auto_mode = os.environ.get("AUTO_SETUP_MODE")
+    if auto_mode == "cli":
+        selected_cli_mode = True
+    elif auto_mode == "web":
+        selected_cli_mode = False
+    elif args.cli:
         selected_cli_mode = True
     elif args.streamlit:
         selected_cli_mode = False
@@ -408,29 +467,17 @@ if __name__ == "__main__":
     else:
         selected_cli_mode = False
 
+    # Remember the choice so a venv relaunch doesn't prompt again.
+    os.environ["AUTO_SETUP_MODE"] = "cli" if selected_cli_mode else "web"
+
     if selected_cli_mode:
-        debug_info('[SYSTEM] Starte terminalbasiertes Interface (CLI)')
-        package_list = [pkg for pkg in REQUIRED_PACKAGES if pkg not in ('streamlit', 'plotly', 'pandas')]
-        check_and_install_dependencies(package_list)
-        print("\n" + "=" * 110)
+        log_info("Starting terminal-based interface (TUI)")
+        cli_packages = [p for p in REQUIRED_PACKAGES if p not in CLI_EXCLUDE]
+        check_and_install_dependencies(cli_packages, android_mode=is_android_termux())
+        print()
         start_cli_app()
     else:
-        # 1. Animierter Aufbau der originalen Pyramide
-        animate_pyramid(PYRAMID_LINES, delay=0.01)
-
-        # 2. Tech-Rahmen einblenden — BUG FIX: Inhalt korrekt auf 108 Zeichen zentriert
-        HEADER_TEXT = ">>>  INFORMATIK PROJEKT AI&PYRAMIDEN  <<<"   # 41 Zeichen
-        padding_left  = (108 - len(HEADER_TEXT)) // 2              # 33
-        padding_right = 108 - len(HEADER_TEXT) - padding_left      # 34
-        header_line = "│" + " " * padding_left + HEADER_TEXT + " " * padding_right + "│"
-
-        print("┌" + "─" * 108 + "┐")
-        matrix_glitch_text(header_line, delay=0.01)
-        print("└" + "─" * 108 + "┘")
-        print()
-
-        # 3. Validierung, Cooldown & Start
+        print_banner()
         check_and_install_dependencies(REQUIRED_PACKAGES)
-        print("\n" + "=" * 110)
-
+        print()
         start_streamlit_app()
