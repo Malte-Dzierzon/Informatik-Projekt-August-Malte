@@ -1,9 +1,12 @@
-# Core dependencies
+# Core dependencies — wheels exist for Windows, Linux, macOS (Intel/ARM) and Termux
+# run.py auto-installs these via pip; on Termux it also tries `pkg install`
+# python-numpy / python-scipy / python-pandas for faster native installs.
 numpy>=1.24
 scipy>=1.10
 pandas>=2.0
 plotly>=5.15
 streamlit>=1.28
+Pillow>=10.0
 
 # Optional: for enhanced terminal UI on Android
 # inquirerpy>=0.3
